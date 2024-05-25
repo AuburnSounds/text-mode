@@ -1,0 +1,5 @@
+{
+	"name": "cp437",
+    "license": "BSL-1.0",
+    "description": "Virtual CP437 text console, for use in GUI programs or fantasy consoles"
+}
