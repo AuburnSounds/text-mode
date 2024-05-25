@@ -1,11 +1,12 @@
-module cp437;
+module vintageconsole;
 
 nothrow @nogc @safe:
 
+import core.memory;
 import core.stdc.stdlib: realloc, free;
 
 /// Selected vintage font.
-enum CP437Font
+enum VCFont
 {
     pcega, /// PC EGA? unknown TODO
     kc853, /// KC85/3
@@ -17,99 +18,211 @@ enum CP437Font
 }
 
 /** 
-Main API of the CP437 library.
-This library provides:
- - a text buffer similar to text mode, with character values and attributes.
-     Input methods do not give access to it, but to user-friendly:
- - palette change
- - color selection
- - print functions
- - using the CCL language and attribute stack, like in console-colors
-   package.
- - an internal bitmapped back buffer, with efficient methods to get its 
-   content in full or piecewise, for UI applications or games that need
-   to include a virtual console.
+    Main API of the vintage-console library.
+
+    This library provides:
+     - a text buffer similar to text mode, interleaved chars and attributes.
+         Input methods do not give access to it, but to user-friendly:
+     - palette change
+     - color selection
+     - print functions
+     - using the CCL language and attribute stack, like in console-colors
+       package.
+     - an internal bitmapped back buffer, with efficient methods to get its 
+       content in full or piecewise, for UI applications or games that need
+       to include a virtual console.
 */
-struct CP437
+struct VintageConsole
 {
 public:
 nothrow:
 @nogc:
 
-    /**    
-        Change size of the console. Initialize the buffer to all spaces.
-    */
-    void initialize(int columns, int rows)
+    // ███████╗███████╗████████╗██╗   ██╗██████╗ 
+    // ██╔════╝██╔════╝╚══██╔══╝██║   ██║██╔══██╗
+    // ███████╗█████╗     ██║   ██║   ██║██████╔╝
+    // ╚════██║██╔══╝     ██║   ██║   ██║██╔═══╝ 
+    // ███████║███████╗   ██║   ╚██████╔╝██║   
+
+    /**
+        Set/get size of text buffer (default: 40x25).
+     */
+    void size(int columns, int rows)
     {
         updateTextBufferSize(columns, rows);
         updateBackBufferSize();
     }
+    ///ditto
+    int[2] size() pure const
+    {
+        return [_columns, _rows];
+    }
 
     /**
-        Change font selection.
-    */
-    void font(CP437Font font)
+        Get number of text columns.
+     */
+    int columns() pure const { return _columns; }
+
+    /**
+        Get number of text rows.
+     */
+    int rows() pure const { return _columns; }
+
+
+    // ███████╗████████╗██╗   ██╗██╗     ███████╗
+    // ██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     ██╔════╝
+    // ███████╗   ██║    ╚████╔╝ ██║     █████╗  
+    // ╚════██║   ██║     ╚██╔╝  ██║     ██╔══╝  
+    // ███████║   ██║      ██║   ███████╗███████╗    
+
+    /**
+        Set/get font selection (default: EGA 8x8).
+        All fonts are monospaced.
+     */
+    void font(VCFont font)
     {
-        this.font = font;
-        this.charWidth = 8;
-        this.charHeight = 8;
+        _font = font;
         updateBackBufferSize();
+    }
+    ///ditto
+    VCFont font() pure const
+    { 
+        return _font; 
+    }
+
+    /**
+        Set/get palette entries.
+        Params: entry Palette index, must be 0 <= entry <= 15
+                r Red value, 0 to 255
+                g Green value, 0 to 255
+                b Blue value, 0 to 255
+                a Alpha value, 0 to 255. As background color, alpha is always
+                  considered 255.
+     */
+    void setPalette(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
+    {
+        palette[entry & 15] = rgba_t(r, g, b, a);
+        // TODO: invalidate part of buffers
+    }
+    ///ditto
+    void getPalette(int entry, 
+                    ref ubyte r, 
+                    ref ubyte g, 
+                    ref ubyte b, 
+                    ref ubyte a) pure const
+    {
+        r = palette[entry & 15].r;
+        g = palette[entry & 15].g;
+        b = palette[entry & 15].b;
+        a = palette[entry & 15].a;
+    }
+
+    /**
+        Set foreground color.
+     */
+    void fg(int fg)
+    {
+        _fg = fg & 15;
+    }
+
+    /**
+        Set background color.
+     */
+    void fg(int fg)
+    {
+        _fg = fg & 15;
+    }
+
+
+    // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗ ██╗███╗   ██╗ ██████╗ 
+    // ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗██║████╗  ██║██╔════╝ 
+    // ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝██║██╔██╗ ██║██║  ███╗
+    // ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗██║██║╚██╗██║██║   ██║
+    // ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║██║██║ ╚████║╚██████╔╝
+    // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+
+    /**
+        Get width/height of a character with current font and scale, in pixels.
+    */
+    int charWidth() pure const
+    {
+        return fontCharSize(_font)[0];
+    }
+    ///ditto
+    int charHeight() pure const
+    {
+        return fontCharSize(_font)[1];
     }
 
     ~this() @trusted
     {
-        free(text);
-        free(back);
+        free(_text.ptr);
+        free(_back.ptr);
     }
 
 private:
 
     // By default, EGA text mode, correspond to a 320x200.
-    CP437Font font = CP437Font.pcega;
-    int columns    = -1;
-    int rows       = -1;
+    VCFont _font    = VCFont.pcega;
+    int _columns    = -1;
+    int _rows       = -1;
 
-    // text buffer, char data is: glyph index (8-bit) 
-    //                            fg+bg color (4-bit each)
-    ubyte* text; 
+    alias CharFlags = ubyte;
+    enum : CharFlags
+    {
+        flagBold,
+        flagUnderline,
+        flagShiny,
+        flagBlink 
+    }
+    // text buffer
+    CharData[] _text = null; 
     static struct CharData
     {
         ubyte glyph; // glyph index, 0..255
-        ubyte attr;  // Low nibble = foreground color
+        ubyte color; // Low nibble = foreground color
                      // High nibble = background color
+        CharFlags flags;
     }
 
-    int charWidth  = 8;
-    int charHeight = 8;
+    static struct rgba_t
+    {
+        ubyte r, g, b, a;
+    }
+
+    // Palette
+    rgba_t[16] palette;
 
     // Size of bitmap backing buffer.
-    int backWidth  = -1;
-    int backHeight = -1;
-    ubyte* back;
+    int _backWidth  = -1;
+    int _backHeight = -1;
+    rgba_t[] _back   = null;
 
     void updateTextBufferSize(int columns, int rows) @trusted
     {
-        if (this.columns != columns || this.rows != rows)
+        if (_columns != columns || _rows != rows)
         {
-            int bytes = columns * rows * 2;
-            text = cast(ubyte*) realloc_c17(text, bytes);
-            this.columns = columns;
-            this.rows    = rows;
+            size_t bytes = columns * rows * CharData.sizeof;
+            void* p = realloc_c17(_text.ptr, bytes);
+            _text = (cast(CharData*)p)[0..columns * rows];
+            _columns = columns;
+            _rows    = rows;
         }
-        this.columns = columns;
-        this.rows    = rows;
+        _columns = columns;
+        _rows    = rows;
     }
 
     void updateBackBufferSize() @trusted
     {
         int width  = columns * charWidth;
         int height = rows    * charHeight;
-        if (width != backWidth || height != backHeight)
+        if (width != _backWidth || height != _backHeight)
         {
-            int bytes = width * height * 4;
-            back = cast(ubyte*) realloc_c17(back, bytes);
-            backHeight = height;
-            backWidth = width;
+            size_t bytes = width * height * 4;
+            void* p = realloc_c17(_back.ptr, bytes);
+            _back = (cast(rgba_t*)p)[0..width*height];
+            _backHeight = height;
+            _backWidth = width;
         }
     }
 }
@@ -124,6 +237,21 @@ void* realloc_c17(void* p, size_t size) @system
         return null;
     }
     return realloc(p, size);
+}
+
+int[2] fontCharSize(VCFont font) pure
+{
+    final switch(font) with (VCFont)
+    {
+        case pcega:
+        case kc853:
+        case kc854:
+        case z1013:
+        case cpc:
+        case c64: 
+        case oric:
+            return [8, 8];
+    }
 }
 
 // Note: not sure what font it is, I dumped that from BIOS memory years ago

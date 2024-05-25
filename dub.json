@@ -1,5 +1,5 @@
 {
-	"name": "cp437",
+	"name": "vintage-console",
     "license": "BSL-1.0",
-    "description": "Virtual CP437 text console, for use in GUI programs or fantasy consoles"
+    "description": "Virtual text mode, for use in GUI programs or fantasy consoles"
 }
