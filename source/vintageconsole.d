@@ -17,15 +17,23 @@ enum VCFont
     oric,  /// Oric Atmos
 }
 
+enum VCPalettePreset
+{
+    vintage,
+    campbell,
+    oneHalfLight,
+    tango,
+}
+
 /** 
     Main API of the vintage-console library.
 
     This library provides:
      - a text buffer similar to text mode, interleaved chars and attributes.
          Input methods do not give access to it, but to user-friendly:
-     - palette change
-     - color selection
-     - print functions
+       - palette change
+       - color selection
+       - print functions
      - using the CCL language and attribute stack, like in console-colors
        package.
      - an internal bitmapped back buffer, with efficient methods to get its 
@@ -91,6 +99,23 @@ nothrow:
     }
 
     /**
+        Load a palette preset.
+    */
+    void loadPalette(VCPalettePreset palette)
+    {
+        for (int entry = 0; entry < 16; ++entry)
+        {
+            uint col = PALETTE_DATA[palette][entry];
+            ubyte r = col >>> 24;
+            ubyte g = 0xff & (col >>> 16);
+            ubyte b = 0xff & (col >>> 8);
+            ubyte a = 0xff & col;
+            palette[entry] = rgba_t(r, g, b, a);
+        }
+        // TODO: invalidate part of buffers
+    }
+
+    /**
         Set/get palette entries.
         Params: entry Palette index, must be 0 <= entry <= 15
                 r Red value, 0 to 255
@@ -99,7 +124,7 @@ nothrow:
                 a Alpha value, 0 to 255. As background color, alpha is always
                   considered 255.
      */
-    void setPalette(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
+    void setPaletteEntry(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
     {
         palette[entry & 15] = rgba_t(r, g, b, a);
         // TODO: invalidate part of buffers
@@ -128,9 +153,9 @@ nothrow:
     /**
         Set background color.
      */
-    void fg(int fg)
+    void bg(int bg)
     {
-        _fg = fg & 15;
+        _bg = bg & 15;
     }
 
 
@@ -157,6 +182,7 @@ nothrow:
     ~this() @trusted
     {
         free(_text.ptr);
+        free(_cache.ptr);
         free(_back.ptr);
     }
 
@@ -166,6 +192,8 @@ private:
     VCFont _font    = VCFont.pcega;
     int _columns    = -1;
     int _rows       = -1;
+    ubyte _bg       = 0;
+    ubyte _fg       = 8;
 
     alias CharFlags = ubyte;
     enum : CharFlags
@@ -175,8 +203,9 @@ private:
         flagShiny,
         flagBlink 
     }
-    // text buffer
-    CharData[] _text = null; 
+    
+    CharData[] _text = null;  // text buffer
+    CharData[] _cache = null; // cached text buffer, if different then dirty
     static struct CharData
     {
         ubyte glyph; // glyph index, 0..255
@@ -205,6 +234,7 @@ private:
             size_t bytes = columns * rows * CharData.sizeof;
             void* p = realloc_c17(_text.ptr, bytes);
             _text = (cast(CharData*)p)[0..columns * rows];
+            _cache = (cast(CharData*)p)[0..columns * rows];
             _columns = columns;
             _rows    = rows;
         }
@@ -253,6 +283,33 @@ int[2] fontCharSize(VCFont font) pure
             return [8, 8];
     }
 }
+
+static immutable uint[16][VCPalettePreset.max+1] PALETTE_DATA =
+[
+    // Vintaage
+    [ 0x000000, 0x800000, 0x008000, 0x808000, 
+      0x000080, 0x800080, 0x008080, 0xc0c0c0,
+      0x000000, 0x000000, 0x000000, 0x000000,
+      0x808080, 0xff0000, 0x000000, 0x000000 ],
+
+    // Campbell
+    [ 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 
+      0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
+      0x767676, 0xe74856, 0x16c60c, 0xf9f1a5,
+      0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2 ],
+
+    // OneHalfLight
+    [ 0x383a42, 0xe45649, 0x50a14f, 0xc18301, 
+      0x0184bc, 0xa626a4, 0x0997b3, 0xfafafa,
+      0x4f525d, 0xdf6c75, 0x98c379, 0xe4c07a,
+      0x61afef, 0xc577dd, 0x56b5c1, 0xffffff ],
+
+    // Tango
+    [ 0x000000, 0xcc0000, 0x4e9a06, 0xc4a000,
+      0x3465a4, 0x75507b, 0x06989a, 0xd3d7cf,
+      0x555753, 0xef2929, 0x8ae234, 0xfce94f,
+      0x729fcf, 0xad7fa8, 0x34e2e2, 0xeeeeec ],
+];
 
 // Note: not sure what font it is, I dumped that from BIOS memory years ago
 static immutable ubyte[2048] FONTDATA_IBM_PC_EGA =
