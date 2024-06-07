@@ -1,0 +1,9 @@
+{
+  "name": "turtle-terminal",
+  "targetType": "executable",
+  "dependencies": {
+    "turtle": "~>0.0",
+    "vintage-console" : { "path" : "../.." }
+  },
+  "versions": [ "SDL_209" ]
+}

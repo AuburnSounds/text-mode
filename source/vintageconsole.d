@@ -5,7 +5,7 @@ nothrow @nogc @safe:
 import core.memory;
 import core.stdc.stdlib: realloc, free;
 
-/// Selected vintage font.
+/// Selected vintage font
 enum VCFont
 {
     pcega, /// PC EGA? unknown TODO
@@ -25,20 +25,13 @@ enum VCPalettePreset
     tango,
 }
 
+/// Rendering options
+struct VCRenderOptions
+{
+}
+
 /** 
     Main API of the vintage-console library.
-
-    This library provides:
-     - a text buffer similar to text mode, interleaved chars and attributes.
-         Input methods do not give access to it, but to user-friendly:
-       - [x] palette change
-       - [x] color selection
-       - print functions
-     - [ ] using the CCL language and attribute stack, like in console-colors
-           package.
-     - [ ] an internal bitmapped back buffer, with efficient methods to get its 
-           content in full or piecewise, for UI applications or games that need
-           to include a virtual console.
 */
 struct VintageConsole
 {
@@ -71,6 +64,21 @@ nothrow:
         return [_columns, _rows];
     }
 
+    /**
+        Given selected font and size of console screen, give a suggested output
+        buffer size (in pixels).
+        However, this library will manage to render in whatever buffer size you 
+        give.
+    */
+    int suggestedWidth()
+    {
+        return _columns * charWidth();
+    }
+    ///ditto
+    int suggestedHeight()
+    {
+        return _rows * charHeight();
+    }
 
     /**
         Get number of text columns.
@@ -131,7 +139,7 @@ nothrow:
     void font(VCFont font)
     {
         _font = font;
-        updateBackBufferSize();
+        updateBackBufferSize(); // if internal size changed
     }
     ///ditto
     VCFont font() pure const
@@ -139,6 +147,18 @@ nothrow:
         return _font; 
     }
 
+    /**
+        Get width/height of a character with current font and scale, in pixels.
+    */
+    int charWidth() pure const
+    {
+        return fontCharSize(_font)[0];
+    }
+    ///ditto
+    int charHeight() pure const
+    {
+        return fontCharSize(_font)[1];
+    }
 
     /**
         Load a palette preset.
@@ -173,10 +193,10 @@ nothrow:
     }
     ///ditto
     void getPaletteEntry(int entry, 
-                         ref ubyte r, 
-                         ref ubyte g, 
-                         ref ubyte b, 
-                         ref ubyte a) pure const
+                         out ubyte r, 
+                         out ubyte g, 
+                         out ubyte b, 
+                         out ubyte a) pure const
     {
         r = _palette[entry & 15].r;
         g = _palette[entry & 15].g;
@@ -189,7 +209,7 @@ nothrow:
      */
     void fg(int fg)
     {
-        current._fg = fg & 15;
+        current.fg = fg & 15;
     }
 
     /**
@@ -197,10 +217,85 @@ nothrow:
      */
     void bg(int bg)
     {
-        current._bg = bg & 15;
+        current.bg = bg & 15;
     }
 
 
+    /// ████████╗███████╗██╗  ██╗████████╗
+    /// ╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
+    ///    ██║   █████╗   ╚███╔╝    ██║   
+    ///    ██║   ██╔══╝   ██╔██╗    ██║   
+    ///    ██║   ███████╗██╔╝ ██╗   ██║   
+    ///    ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝
+
+
+    /**
+    Print text to console.
+    See_also: `render` to get the changes somewhere.
+    */
+    void print(const(char)[] s) pure
+    {
+        foreach(char ch; s)
+        {
+            int col = current.ccol;
+            int row = current.crow;
+
+            CharData* cdata = &_text[col + row * _columns];
+            cdata.glyph = ch;
+            cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
+            cdata.flags = current.flags;
+
+            current.ccol += 1;
+
+            if (current.ccol >= _columns)
+            {
+                newline();
+            }
+        }
+    }
+    ///ditto
+    void println(const(char)[] s) pure
+    {
+        print(s);
+        newline();
+    }
+    ///ditto
+    void newline() pure
+    {
+        current.ccol = 0;
+        current.crow += 1;
+    }
+
+    /**
+    `cls` clears the screen, filling it with spaces.
+    */
+    void cls() pure
+    {
+        // Set all char data to grey space
+        _text[] = CharData.init;
+    }
+
+    /** 
+    Change text cursor position. -1 indicate "keep".
+    Do nothing for each dimension separately, if position is out of bounds.
+    */
+    void locate(int x = -1, int y = -1)
+    {
+        column(x);
+        row(y);
+    }
+    ///ditto
+    void column(int x)
+    {
+        if ((x >= 0) && (x < _columns)) 
+            current.ccol = x;
+    }
+    ///ditto
+    void row(int y)
+    {
+        if ((y >= 0) && (y < _rows))
+            current.crow = y;
+    }
 
     // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗ ██╗███╗   ██╗ ██████╗ 
     // ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗██║████╗  ██║██╔════╝ 
@@ -210,33 +305,7 @@ nothrow:
     // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
 
 
-
-    /**
-        Get width/height of a character with current font and scale, in pixels.
-    */
-    int charWidth() pure const
-    {
-        return fontCharSize(_font)[0];
-    }
-    ///ditto
-    int charHeight() pure const
-    {
-        return fontCharSize(_font)[1];
-    }
-
-
-    /**
-        `cls` clears the screen, filling it with spaces.
-    */
-    void cls() pure
-    {
-        // Set all char data to grey space
-        _text[] = CharData.init;
-    }
-
-
-    /** Locate moves the cursor to a specified position on the screen.
-    term.cursor( */
+    /** Locate moves the cursor to a specified position on the screen. */
 
     ~this() @trusted
     {
@@ -250,8 +319,7 @@ private:
     // By default, EGA text mode, correspond to a 320x200.
     VCFont _font    = VCFont.pcega;
     int _columns    = -1;
-    int _rows       = -1;
-    
+    int _rows       = -1;    
 
     alias CharFlags = ubyte;
     enum : CharFlags
@@ -287,17 +355,18 @@ private:
 
     static struct State
     {
-        ubyte _bg       = 0;
-        ubyte _fg       = 8;
+        ubyte bg       = 0;
+        ubyte fg       = 8;
         int ccol = 0; // curor col  (X position)
         int crow = 0; // cursor row (Y position)
+        CharFlags flags = 0;
     }
 
     enum STATE_STACK_DEPTH = 32;
     State[STATE_STACK_DEPTH] _state;
     int _stateCount = 1;
 
-    ref State current() return
+    ref State current() pure return
     {
         return _state[_stateCount - 1];
     }
