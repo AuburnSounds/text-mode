@@ -31,14 +31,14 @@ enum VCPalettePreset
     This library provides:
      - a text buffer similar to text mode, interleaved chars and attributes.
          Input methods do not give access to it, but to user-friendly:
-       - palette change
-       - color selection
+       - [x] palette change
+       - [x] color selection
        - print functions
-     - using the CCL language and attribute stack, like in console-colors
-       package.
-     - an internal bitmapped back buffer, with efficient methods to get its 
-       content in full or piecewise, for UI applications or games that need
-       to include a virtual console.
+     - [ ] using the CCL language and attribute stack, like in console-colors
+           package.
+     - [ ] an internal bitmapped back buffer, with efficient methods to get its 
+           content in full or piecewise, for UI applications or games that need
+           to include a virtual console.
 */
 struct VintageConsole
 {
@@ -46,14 +46,19 @@ public:
 nothrow:
 @nogc:
 
+
     // ███████╗███████╗████████╗██╗   ██╗██████╗ 
     // ██╔════╝██╔════╝╚══██╔══╝██║   ██║██╔══██╗
     // ███████╗█████╗     ██║   ██║   ██║██████╔╝
     // ╚════██║██╔══╝     ██║   ██║   ██║██╔═══╝ 
     // ███████║███████╗   ██║   ╚██████╔╝██║   
 
+
     /**
         Set/get size of text buffer (default: 40x25).
+        Set/get size of text buffer (default: 40x25).
+
+        Warning: this clears the screen like calling `cls`.
      */
     void size(int columns, int rows)
     {
@@ -66,6 +71,7 @@ nothrow:
         return [_columns, _rows];
     }
 
+
     /**
         Get number of text columns.
      */
@@ -77,11 +83,46 @@ nothrow:
     int rows() pure const { return _columns; }
 
 
+
     // ███████╗████████╗██╗   ██╗██╗     ███████╗
     // ██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     ██╔════╝
     // ███████╗   ██║    ╚████╔╝ ██║     █████╗  
     // ╚════██║   ██║     ╚██╔╝  ██║     ██╔══╝  
     // ███████║   ██║      ██║   ███████╗███████╗    
+
+
+    /** 
+        Save/restore state, that includes:
+        - foreground color
+        - background color
+        - cursor position
+
+        But not:
+        - palette
+        - font
+
+        Warning: since it will only make a display bug, this is a bit like 
+                 Markdown and won't report stack errors. Pair your save/restore
+                 call.
+    */
+    void save()
+    {
+        if (_stateCount == STATE_STACK_DEPTH)
+        {
+            // No more state depth, silently break
+            return;
+        }
+        _state[_stateCount] = _state[_stateCount-1];
+        _stateCount += 1;
+    }
+    ///ditto
+    void restore()
+    {
+        if (_stateCount < 0)
+        _stateCount -= 1;
+        
+    }
+
 
     /**
         Set/get font selection (default: EGA 8x8).
@@ -98,10 +139,11 @@ nothrow:
         return _font; 
     }
 
+
     /**
         Load a palette preset.
     */
-    void loadPalette(VCPalettePreset palette)
+    void palette(VCPalettePreset palette)
     {
         for (int entry = 0; entry < 16; ++entry)
         {
@@ -110,7 +152,7 @@ nothrow:
             ubyte g = 0xff & (col >>> 16);
             ubyte b = 0xff & (col >>> 8);
             ubyte a = 0xff & col;
-            palette[entry] = rgba_t(r, g, b, a);
+            _palette[entry] = rgba_t(r, g, b, a);
         }
         // TODO: invalidate part of buffers
     }
@@ -126,20 +168,20 @@ nothrow:
      */
     void setPaletteEntry(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
     {
-        palette[entry & 15] = rgba_t(r, g, b, a);
+        _palette[entry & 15] = rgba_t(r, g, b, a);
         // TODO: invalidate part of buffers
     }
     ///ditto
-    void getPalette(int entry, 
-                    ref ubyte r, 
-                    ref ubyte g, 
-                    ref ubyte b, 
-                    ref ubyte a) pure const
+    void getPaletteEntry(int entry, 
+                         ref ubyte r, 
+                         ref ubyte g, 
+                         ref ubyte b, 
+                         ref ubyte a) pure const
     {
-        r = palette[entry & 15].r;
-        g = palette[entry & 15].g;
-        b = palette[entry & 15].b;
-        a = palette[entry & 15].a;
+        r = _palette[entry & 15].r;
+        g = _palette[entry & 15].g;
+        b = _palette[entry & 15].b;
+        a = _palette[entry & 15].a;
     }
 
     /**
@@ -147,7 +189,7 @@ nothrow:
      */
     void fg(int fg)
     {
-        _fg = fg & 15;
+        current._fg = fg & 15;
     }
 
     /**
@@ -155,8 +197,9 @@ nothrow:
      */
     void bg(int bg)
     {
-        _bg = bg & 15;
+        current._bg = bg & 15;
     }
+
 
 
     // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗ ██╗███╗   ██╗ ██████╗ 
@@ -165,6 +208,8 @@ nothrow:
     // ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗██║██║╚██╗██║██║   ██║
     // ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║██║██║ ╚████║╚██████╔╝
     // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+
+
 
     /**
         Get width/height of a character with current font and scale, in pixels.
@@ -179,6 +224,20 @@ nothrow:
         return fontCharSize(_font)[1];
     }
 
+
+    /**
+        `cls` clears the screen, filling it with spaces.
+    */
+    void cls() pure
+    {
+        // Set all char data to grey space
+        _text[] = CharData.init;
+    }
+
+
+    /** Locate moves the cursor to a specified position on the screen.
+    term.cursor( */
+
     ~this() @trusted
     {
         free(_text.ptr);
@@ -192,8 +251,7 @@ private:
     VCFont _font    = VCFont.pcega;
     int _columns    = -1;
     int _rows       = -1;
-    ubyte _bg       = 0;
-    ubyte _fg       = 8;
+    
 
     alias CharFlags = ubyte;
     enum : CharFlags
@@ -208,10 +266,10 @@ private:
     CharData[] _cache = null; // cached text buffer, if different then dirty
     static struct CharData
     {
-        ubyte glyph; // glyph index, 0..255
-        ubyte color; // Low nibble = foreground color
-                     // High nibble = background color
-        CharFlags flags;
+        ubyte glyph     = 32; // glyph index, 0..255
+        ubyte color     = 8;  // Low nibble = foreground color
+                          // High nibble = background color
+        CharFlags flags = 0;
     }
 
     static struct rgba_t
@@ -220,12 +278,29 @@ private:
     }
 
     // Palette
-    rgba_t[16] palette;
+    rgba_t[16] _palette;
 
     // Size of bitmap backing buffer.
     int _backWidth  = -1;
     int _backHeight = -1;
     rgba_t[] _back   = null;
+
+    static struct State
+    {
+        ubyte _bg       = 0;
+        ubyte _fg       = 8;
+        int ccol = 0; // curor col  (X position)
+        int crow = 0; // cursor row (Y position)
+    }
+
+    enum STATE_STACK_DEPTH = 32;
+    State[STATE_STACK_DEPTH] _state;
+    int _stateCount = 1;
+
+    ref State current() return
+    {
+        return _state[_stateCount - 1];
+    }
 
     void updateTextBufferSize(int columns, int rows) @trusted
     {
@@ -238,6 +313,7 @@ private:
             _columns = columns;
             _rows    = rows;
         }
+        _text[] = CharData.init;
         _columns = columns;
         _rows    = rows;
     }
@@ -255,9 +331,52 @@ private:
             _backWidth = width;
         }
     }
+
+    // Draw all chars from _text to _back, no caching yet
+    void drawAllChars()
+    {
+        for (int row = 0; row < _rows; ++row)
+        {
+            for (int col = 0; col < _columns; ++col)
+            {
+                drawChar(col, row);
+            }
+        }
+    }
+
+    ref CharData charDataAt(int col, int row) return
+    {
+        return _text[col + row * _columns];
+    }
+
+    void drawChar(int col, int row) @trusted
+    {
+        CharData cdata = charDataAt(col, row);
+
+        // TODO: at this point, must compare to cached value
+
+        int cw = charWidth();
+        int ch = charHeight();
+        rgba_t fgCol = _palette[ cdata.color &  15 ];
+        rgba_t bgCol = _palette[ cdata.color >>> 4 ];
+        const(ubyte)[] fontData = getFontData(_font);
+        for (int y = 0; y < ch; ++y)
+        {
+            const int yback = row * ch + y;
+            const int bits  = fontData[ch * cdata.glyph + y];
+            rgba_t* pixels  = &_back[(_columns * cw) * row + (col * cw)];
+            for (int x = 0; x < cw; ++x)
+            {
+                bool on = (bits >> x) & 1;
+                pixels[x] = on ? fgCol : bgCol;
+            }
+        }
+    }
 }
 
 private:
+
+
 
 void* realloc_c17(void* p, size_t size) @system
 {
@@ -281,6 +400,20 @@ int[2] fontCharSize(VCFont font) pure
         case c64: 
         case oric:
             return [8, 8];
+    }
+}
+
+const(ubyte)[] getFontData(VCFont font) pure
+{
+    final switch(font) with (VCFont)
+    {
+        case pcega: return FONTDATA_IBM_PC_EGA;
+        case kc853: return FONTDATA_KC853;
+        case kc854: return FONTDATA_KC854;
+        case z1013: return FONTDATA_Z1013;
+        case cpc:   return FONTDATA_CPC;
+        case c64:   return FONTDATA_C64;
+        case oric:  return FONTDATA_ORIC;
     }
 }
 
