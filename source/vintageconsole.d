@@ -231,7 +231,7 @@ nothrow:
     /**
         Print text to console.
         
-        See_also: `render` to get the changes somewhere.
+        See_also: `render()`
     */
     void print(const(char)[] s) pure
     {
@@ -267,6 +267,19 @@ nothrow:
     {
         current.ccol = 0;
         current.crow += 1;
+
+        // Should we scroll everything up?
+        while (current.crow >= _rows)
+        {
+            for (int row = 0; row < _rows - 1; ++row)
+            {
+                for (int col = 0; col < _columns; ++col)
+                {
+                    charDataAt(col, row) = charDataAt(col, row + 1);
+                }
+            }
+            current.crow -= 1;
+        }
     }
 
     /**
@@ -482,7 +495,7 @@ private:
         }
     }
 
-    ref CharData charDataAt(int col, int row) return
+    ref CharData charDataAt(int col, int row) pure return
     {
         return _text[col + row * _columns];
     }
