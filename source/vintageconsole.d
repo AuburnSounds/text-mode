@@ -17,17 +17,13 @@ enum VCFont
     oric,  /// Oric Atmos
 }
 
+/// Predefined palettes
 enum VCPalettePreset
 {
     vintage,
     campbell,
     oneHalfLight,
     tango,
-}
-
-/// Rendering options
-struct VCRenderOptions
-{
 }
 
 /** 
@@ -68,7 +64,7 @@ nothrow:
         Given selected font and size of console screen, give a suggested output
         buffer size (in pixels).
         However, this library will manage to render in whatever buffer size you 
-        give.
+        give, so this is completely optional.
     */
     int suggestedWidth()
     {
@@ -267,7 +263,7 @@ nothrow:
     }
 
     /**
-    `cls` clears the screen, filling it with spaces.
+        `cls` clears the screen, filling it with spaces.
     */
     void cls() pure
     {
@@ -276,8 +272,8 @@ nothrow:
     }
 
     /** 
-    Change text cursor position. -1 indicate "keep".
-    Do nothing for each dimension separately, if position is out of bounds.
+        Change text cursor position. -1 indicate "keep".
+        Do nothing for each dimension separately, if position is out of bounds.
     */
     void locate(int x = -1, int y = -1)
     {
@@ -304,13 +300,60 @@ nothrow:
     // ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║██║██║ ╚████║╚██████╔╝
     // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
 
+    /**
+        Setup output buffer.
+    */
+    void outputBuffer(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
+        @system // memory-safe if pixels in that image addressable
+    {
+        // for now, must be same dimensions
+        assert(width >= suggestedWidth);
+        assert(height >= suggestedHeight);
+        
+        if (width != suggestedWidth)
+            width = suggestedWidth;
+        
+        if (height != suggestedHeight)
+            height = suggestedHeight;
+
+        _outPixels = pixels;
+        _outW = width;
+        _outH = height;
+        _outPitch = pitchBytes;
+    }
+
+    /**
+        Render console to output.
+    */
+    void render() 
+        @system // memory-safe if `outputBuffer()` was called and memory-safe
+    {
+        // 1. draw chars in original size
+        drawAllChars();
+
+        // PERF: intermediate buffer could be premul alpha
+
+        // 2. composite to output buffer
+
+        int backPitch = _columns * charWidth;
+
+        for (int y = 0; y < _outH; ++y)
+        {
+            const(rgba_t)* rendered = &_back[backPitch * y];
+            rgba_t* output = cast(rgba_t*)(_outPixels + _outPitch * y);
+
+            for (int x = 0; x < _outW; ++x)
+            {
+                output[x] = blendColor(rendered[x], output[x], rendered.a);
+            }
+        }
+    }
 
     /** Locate moves the cursor to a specified position on the screen. */
 
     ~this() @trusted
     {
         free(_text.ptr);
-        free(_cache.ptr);
         free(_back.ptr);
     }
 
@@ -340,11 +383,6 @@ private:
         CharFlags flags = 0;
     }
 
-    static struct rgba_t
-    {
-        ubyte r, g, b, a;
-    }
-
     // Palette
     rgba_t[16] _palette;
 
@@ -371,14 +409,21 @@ private:
         return _state[_stateCount - 1];
     }
 
+    // Output buffer description
+    void* _outPixels;
+    int _outW;
+    int _outH;
+    ptrdiff_t _outPitch;
+
     void updateTextBufferSize(int columns, int rows) @trusted
     {
         if (_columns != columns || _rows != rows)
         {
-            size_t bytes = columns * rows * CharData.sizeof;
-            void* p = realloc_c17(_text.ptr, bytes);
-            _text = (cast(CharData*)p)[0..columns * rows];
-            _cache = (cast(CharData*)p)[0..columns * rows];
+            int cells = columns * rows;
+            size_t bytes = cells * CharData.sizeof;
+            void* p = realloc_c17(_text.ptr, bytes * 2);
+            _text = (cast(CharData*)p)[0..cells];
+            _cache = (cast(CharData*)p)[cells..2*cells];
             _columns = columns;
             _rows    = rows;
         }
@@ -445,6 +490,10 @@ private:
 
 private:
 
+struct rgba_t
+{
+    ubyte r, g, b, a;
+}
 
 
 void* realloc_c17(void* p, size_t size) @system
@@ -455,6 +504,18 @@ void* realloc_c17(void* p, size_t size) @system
         return null;
     }
     return realloc(p, size);
+}
+
+
+rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
+{
+    ubyte invAlpha = cast(ubyte)(~cast(int)alpha);
+    rgba_t c = void;
+    c.r = cast(ubyte) ( ( (fg.r * alpha) + (bg.r * invAlpha)  ) / ubyte.max );
+    c.g = cast(ubyte) ( ( (fg.g * alpha) + (bg.g * invAlpha)  ) / ubyte.max );
+    c.b = cast(ubyte) ( ( (fg.b * alpha) + (bg.b * invAlpha)  ) / ubyte.max );
+    c.a = cast(ubyte) ( ( (fg.a * alpha) + (bg.a * invAlpha)  ) / ubyte.max );
+    return c;
 }
 
 int[2] fontCharSize(VCFont font) pure
