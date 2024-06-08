@@ -17,7 +17,7 @@ enum VCFont
     oric,  /// Oric Atmos
 }
 
-/// Predefined palettes
+/// Predefined palettes (default: vintage is loaded).
 enum VCPalettePreset
 {
     vintage,
@@ -44,9 +44,8 @@ nothrow:
 
 
     /**
-        Set/get size of text buffer (default: 40x25).
-        Set/get size of text buffer (default: 40x25).
-
+        Set/get size of text buffer.
+        Mandatory call.
         Warning: this clears the screen like calling `cls`.
      */
     void size(int columns, int rows)
@@ -105,9 +104,8 @@ nothrow:
         - palette
         - font
 
-        Warning: since it will only make a display bug, this is a bit like 
-                 Markdown and won't report stack errors. Pair your save/restore
-                 call.
+        Warning: This won't report stack errors. Pair your save/restore calls,
+                 else endure display bugs.
     */
     void save()
     {
@@ -226,8 +224,9 @@ nothrow:
 
 
     /**
-    Print text to console.
-    See_also: `render` to get the changes somewhere.
+        Print text to console.
+        
+        See_also: `render` to get the changes somewhere.
     */
     void print(const(char)[] s) pure
     {
@@ -236,10 +235,13 @@ nothrow:
             int col = current.ccol;
             int row = current.crow;
 
-            CharData* cdata = &_text[col + row * _columns];
-            cdata.glyph = ch;
-            cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
-            cdata.flags = current.flags;
+            if (validPosition(col, row))
+            {
+                CharData* cdata = &_text[col + row * _columns];
+                cdata.glyph = ch;
+                cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
+                cdata.flags = current.flags;
+            }
 
             current.ccol += 1;
 
@@ -384,7 +386,17 @@ private:
     }
 
     // Palette
-    rgba_t[16] _palette;
+    rgba_t[16] _palette = 
+    [
+        rgba_t(  0,   0,   0, 255), rgba_t(128,   0,   0, 255),
+        rgba_t(  0, 128,   0, 255), rgba_t(128, 128,   0, 255),
+        rgba_t(  0,   0, 128, 255), rgba_t(128,   0, 128, 255),
+        rgba_t(  0, 128, 128, 255), rgba_t(192, 192, 192, 255),
+        rgba_t(128, 128, 128, 255), rgba_t(255,   0,   0, 255),
+        rgba_t(  0, 255,   0, 255), rgba_t(255, 255,   0, 255),
+        rgba_t(  0,   0, 255, 255), rgba_t(255,   0, 255, 255),
+        rgba_t(  0, 255, 255, 255), rgba_t(255, 255, 255, 255),
+    ];
 
     // Size of bitmap backing buffer.
     int _backWidth  = -1;
@@ -409,6 +421,11 @@ private:
         return _state[_stateCount - 1];
     }
 
+    bool validPosition(int col, int row) pure const
+    {
+        return (cast(uint)col < _columns) && (cast(uint)row < _rows);
+    }
+
     // Output buffer description
     void* _outPixels;
     int _outW;
@@ -428,8 +445,6 @@ private:
             _rows    = rows;
         }
         _text[] = CharData.init;
-        _columns = columns;
-        _rows    = rows;
     }
 
     void updateBackBufferSize() @trusted
@@ -469,8 +484,14 @@ private:
 
         // TODO: at this point, must compare to cached value
 
+        if (cdata.glyph != 32)
+        {
+            int b = 0;
+        }
         int cw = charWidth();
         int ch = charHeight();
+        ubyte fgi = cdata.color & 15;
+        ubyte bgi = cdata.color >>> 4;
         rgba_t fgCol = _palette[ cdata.color &  15 ];
         rgba_t bgCol = _palette[ cdata.color >>> 4 ];
         const(ubyte)[] fontData = getFontData(_font);
@@ -478,10 +499,10 @@ private:
         {
             const int yback = row * ch + y;
             const int bits  = fontData[ch * cdata.glyph + y];
-            rgba_t* pixels  = &_back[(_columns * cw) * row + (col * cw)];
+            rgba_t* pixels  = &_back[(_columns * cw) * yback + (col * cw)];
             for (int x = 0; x < cw; ++x)
             {
-                bool on = (bits >> x) & 1;
+                bool on = (bits >> (cw - 1 - x)) & 1;
                 pixels[x] = on ? fgCol : bgCol;
             }
         }
@@ -551,9 +572,9 @@ static immutable uint[16][VCPalettePreset.max+1] PALETTE_DATA =
 [
     // Vintaage
     [ 0x000000, 0x800000, 0x008000, 0x808000, 
-      0x000080, 0x800080, 0x008080, 0xc0c0c0,
-      0x000000, 0x000000, 0x000000, 0x000000,
-      0x808080, 0xff0000, 0x000000, 0x000000 ],
+      0x000080, 0x800080, 0x008080, 0xc0c0c0,        
+      0x808080, 0xff0000, 0x00ff00, 0xffff00,
+      0x0000ff, 0xff00ff, 0x00ffff, 0xffffff ],      
 
     // Campbell
     [ 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 
