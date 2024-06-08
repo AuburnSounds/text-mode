@@ -10,7 +10,7 @@ int main(string[] args)
 class TermExample : TurtleGame
 {
     this()
-    {   
+    {
         console.size(80, 25);
     }
 
@@ -24,7 +24,7 @@ class TermExample : TurtleGame
 
     override void update(double dt)
     {
-        if (keyboard.isDown("escape")) exitGame;     
+        if (keyboard.isDown("escape")) exitGame;
     }
 
     override void draw()
@@ -33,10 +33,13 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            cls;            
+            cls;
             outputBuffer(fb.pixels, fb.w, fb.h, fb.pitch);
-            locate(2, 2);
-            print("hello!");
+            println("hello!");
+            println("hello!");
+            println("hello!");
+            locate(10, 10);
+            println("hello!");
             render();
         }
     } 
