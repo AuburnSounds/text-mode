@@ -12,6 +12,7 @@ class TermExample : TurtleGame
     this()
     {
         console.size(80, 25);
+        console.font(VCFont.pcvga);
     }
 
     override void load()
@@ -25,6 +26,19 @@ class TermExample : TurtleGame
     override void update(double dt)
     {
         if (keyboard.isDown("escape")) exitGame;
+
+        if (keyboard.isDown("space"))
+            with(console)
+        {
+            for (int i = 0; i < 256; ++i)
+            {
+                fg(i & 15);
+                bg(cast(ubyte)(i >>> 4));
+                string s;
+                s ~= cast(char)i;
+                print(s);
+            }
+        }
     }
 
     int ntimes;
@@ -34,17 +48,8 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            cls;
-            font(VCFont.pcega);
             outputBuffer(fb.pixels, fb.w, fb.h, fb.pitch);
-            for (int i = 0; i < 256; ++i)
-            {
-                fg(i & 15);
-                bg(cast(ubyte)(i >>> 4));
-                string s;
-                s ~= cast(char)i;
-                print(s);
-            }
+
             render();
         }
     } 
