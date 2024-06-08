@@ -27,6 +27,7 @@ class TermExample : TurtleGame
         if (keyboard.isDown("escape")) exitGame;
     }
 
+    int ntimes;
     override void draw()
     {
         ImageRef!RGBA fb = framebuffer();
@@ -34,16 +35,20 @@ class TermExample : TurtleGame
         with (console)
         {
             cls;
+            font(VCFont.pcega);
             outputBuffer(fb.pixels, fb.w, fb.h, fb.pitch);
-            println("hello!");
-            println("hello!");
-            println("hello!");
-            locate(10, 10);
-            println("hello!");
+            for (int i = 0; i < 256; ++i)
+            {
+                fg(i & 15);
+                bg(cast(ubyte)(i >>> 4));
+                string s;
+                s ~= cast(char)i;
+                print(s);
+            }
             render();
         }
     } 
 
-    VintageConsole console;
+    VCConsole console;
 }
 
