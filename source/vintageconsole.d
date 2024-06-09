@@ -136,7 +136,11 @@ nothrow:
      */
     void font(VCFont font)
     {
-        _font = font;
+        if (_font != font)
+        {
+            _dirtyAllChars = true;
+            _font = font;
+        }
         updateBackBufferSize(); // if internal size changed
     }
     ///ditto
@@ -170,7 +174,7 @@ nothrow:
             ubyte g = 0xff & (col >>> 8);
             ubyte b = 0xff & col;
             ubyte a = 0xff;
-          _palette[entry] = rgba_t(r, g, b, a);
+            setPaletteEntry(entry, r, g, b, a);
         }
     }
 
@@ -185,8 +189,12 @@ nothrow:
      */
     void setPaletteEntry(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
     {
-        _palette[entry & 15] = rgba_t(r, g, b, a);
-        // TODO: invalidate part of buffers
+        rgba_t color = rgba_t(r, g, b, a);
+        if (_palette[entry] != color)
+        {
+            _palette[entry]      = color;
+            _paletteDirty[entry] = true;
+        }
     }
     ///ditto
     void getPaletteEntry(int entry, 
@@ -350,9 +358,11 @@ nothrow:
     void render() 
         @system // memory-safe if `outputBuffer()` was called and memory-safe
     {
-        // TODO: invalidate part of buffers, check which palette changed, what chardata
+        // 0. Invalidate character that need redraw in _back buffer.
+        // After that, _charDirty tells if a character need redraw.
+        invalidateChars();
 
-        // 1. draw chars in original size TODO only those who changed
+        // 1. draw chars in original size, only those who changed.
         drawAllChars();
 
         // PERF: intermediate buffer could be premul alpha
@@ -379,6 +389,7 @@ nothrow:
     {
         free(_text.ptr);
         free(_back.ptr);
+        free(_charDirty.ptr);
     }
 
 private:
@@ -397,8 +408,9 @@ private:
         flagBlink 
     }
     
-    CharData[] _text = null;  // text buffer
+    CharData[] _text  = null; // text buffer
     CharData[] _cache = null; // cached text buffer, if different then dirty
+    bool[] _charDirty = null; // true if character need to redraw in _back
     static struct CharData
     {
         ubyte glyph     = 32; // glyph index, 0..255
@@ -419,6 +431,9 @@ private:
         rgba_t(  0,   0, 255, 255), rgba_t(255,   0, 255, 255),
         rgba_t(  0, 255, 255, 255), rgba_t(255, 255, 255, 255),
     ];
+
+    bool _dirtyAllChars = true; // all chars need redraw (font change typically)
+    bool[16] _paletteDirty; // true if this color changed
 
     // Size of bitmap backing buffer.
     int _backWidth  = -1;
@@ -463,8 +478,10 @@ private:
             void* p = realloc_c17(_text.ptr, bytes * 2);
             _text = (cast(CharData*)p)[0..cells];
             _cache = (cast(CharData*)p)[cells..2*cells];
+            _charDirty = (cast(bool*) realloc_c17(_charDirty.ptr, cells * bool.sizeof))[0..cells];
             _columns = columns;
             _rows    = rows;
+            _dirtyAllChars = true;
         }
         _text[] = CharData.init;
     }
@@ -475,6 +492,7 @@ private:
         int height = rows    * charHeight;
         if (width != _backWidth || height != _backHeight)
         {
+            _dirtyAllChars = true;
             size_t bytes = width * height * 4;
             void* p = realloc_c17(_back.ptr, bytes);
             _back = (cast(rgba_t*)p)[0..width*height];
@@ -483,6 +501,44 @@ private:
         }
     }
 
+    // Reasons to redraw: 
+    //  - their fg or bg color changed
+    //  - their fg or bg color PALETTE changed
+    //  - glyph displayed changed
+    //  - font changed
+    //  - size changed
+    void invalidateChars()
+    {
+        if (_dirtyAllChars)
+        {
+            _charDirty[] = true;
+        }
+        else
+        {
+            for (int row = 0; row < _rows; ++row)
+            {
+                for (int col = 0; col < _columns; ++col)
+                {
+                    int icell = col + row * _columns;
+                    CharData text  =  _text[icell];
+                    CharData cache =  _cache[icell];
+                    bool redraw = false;
+                    if (text != cache)
+                        redraw = true;
+                    else if (_paletteDirty[text.color & 0x0f])
+                        redraw = true;
+                    else if (_paletteDirty[text.color >>> 4])
+                        redraw = true;
+                    _charDirty[icell] = redraw;
+                }
+            }
+        }
+        _dirtyAllChars = false;
+        _paletteDirty[] = false;
+        _cache[] = _text[];
+    }
+
+
     // Draw all chars from _text to _back, no caching yet
     void drawAllChars()
     {
@@ -490,7 +546,8 @@ private:
         {
             for (int col = 0; col < _columns; ++col)
             {
-                drawChar(col, row);
+                if (_charDirty[col + _columns * row])
+                    drawChar(col, row);
             }
         }
     }
@@ -504,12 +561,6 @@ private:
     {
         CharData cdata = charDataAt(col, row);
 
-        // TODO: at this point, must compare to cached value
-
-        if (cdata.glyph != 32)
-        {
-            int b = 0;
-        }
         int cw = charWidth();
         int ch = charHeight();
         ubyte fgi = cdata.color & 15;
@@ -521,11 +572,17 @@ private:
         {
             const int yback = row * ch + y;
             const int bits  = fontData[ch * cdata.glyph + y];
+
             rgba_t* pixels  = &_back[(_columns * cw) * yback + (col * cw)];
-            for (int x = 0; x < cw; ++x)
-            {
-                bool on = (bits >> (cw - 1 - x)) & 1;
-                pixels[x] = on ? fgCol : bgCol;
+            if (bits == 0)
+                pixels[0..cw] = bgCol; // speed-up empty lines 
+            else
+            {   
+                for (int x = 0; x < cw; ++x)
+                {
+                    bool on = (bits >> (cw - 1 - x)) & 1;
+                    pixels[x] = on ? fgCol : bgCol;
+                }
             }
         }
     }
