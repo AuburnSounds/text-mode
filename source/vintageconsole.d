@@ -30,6 +30,24 @@ enum VCPalette
     tango,
 }
 
+/// Rectangle.
+struct VCRect
+{
+nothrow:
+@nogc:
+@safe:
+pure:
+    int x1; ///
+    int y1; ///
+    int x2; ///
+    int y2; ///
+
+    bool isEmpty() const
+    {
+        return x1 == x2 || y1 == y2;
+    }
+}
+
 /** 
     Main API of the vintage-console library.
 */
@@ -139,6 +157,7 @@ nothrow:
         if (_font != font)
         {
             _dirtyAllChars = true;
+            _dirtyValidation = true;
             _font = font;
         }
         updateBackBufferSize(); // if internal size changed
@@ -194,6 +213,7 @@ nothrow:
         {
             _palette[entry]      = color;
             _paletteDirty[entry] = true;
+            _dirtyValidation = true;
         }
     }
     ///ditto
@@ -254,6 +274,7 @@ nothrow:
                 cdata.glyph = ch;
                 cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
                 cdata.flags = current.flags;
+                _dirtyValidation = true;
             }
 
             current.ccol += 1;
@@ -279,6 +300,8 @@ nothrow:
         // Should we scroll everything up?
         while (current.crow >= _rows)
         {
+            _dirtyValidation = true;
+
             for (int row = 0; row < _rows - 1; ++row)
             {
                 for (int col = 0; col < _columns; ++col)
@@ -299,6 +322,7 @@ nothrow:
         _text[] = CharData.init;
         current.ccol = 0;
         current.crow = 0;
+        _dirtyValidation = true;
     }
 
     /** 
@@ -333,7 +357,7 @@ nothrow:
     /**
         Setup output buffer.
     */
-    void outputBuffer(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
+    void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
         @system // memory-safe if pixels in that image addressable
     {
         // for now, must be same dimensions
@@ -353,21 +377,31 @@ nothrow:
     }
 
     /**
-        Render console to output.
+        Render console to output buffer.
+
+        Depending on the options, only the rectangle in `getDirtyRectangle()`
+        will get updated.
     */
     void render() 
         @system // memory-safe if `outputBuffer()` was called and memory-safe
     {
-        // 0. Invalidate character that need redraw in _back buffer.
+        // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
         invalidateChars();
 
-        // 1. draw chars in original size, only those who changed.
+        // 1. Draw chars in original size, only those who changed.
         drawAllChars();
 
-        // PERF: intermediate buffer could be premul alpha
+        // 2. Again, for chars that are dirty, apply pixel effects,
+        // from _back to _post.
+        applyEffects();
 
-        // 2. composite to output buffer
+        // from now on, consider everything done.
+        _dirtyAllChars = false;
+        _paletteDirty[] = false;
+        _cache[] = _text[];
+
+        // 3. composite to output buffer
 
         int backPitch = _columns * charWidth;
 
@@ -383,12 +417,57 @@ nothrow:
         }
     }
 
+    // <dirty rectangles> 
+
+    /**
+
+        (Optional call)
+        Return if there are pending updates to draw, to reflect changes
+        in text buffer content, colors, style or font used.
+        
+        This answer is not valid if you use printing or styling functions
+        before calling `render()`.
+     */
+    bool hasPendingUpdate()
+    {
+        VCRect r = getUpdateRect();
+        return (r.x2 - r.x1) != 0 && (r.y2 - r.y1) != 0;
+    }
+
+    /**
+        (Optional call)
+
+        Returns the rectangle (in pixels coordinates of the output buffer)
+        which is going to be updated next if `render()` was called.
+        This is useful to trigger a partial redraw.
+
+        In case of nothing to redraw, it's width and height will be zero.
+        You may also call `hasPendingUpdate()`.
+
+        This rectangle is not valid if you use printing or styling functions
+        before calling `render()`.
+     */
+    VCRect getUpdateRect()
+    {
+        VCRect textRect = invalidateChars();
+
+        if (textRect.isEmpty)
+            return VCRect(0, 0, 0, 0);
+
+
+        // TODO: Now, need to change this to output buffer coordinates
+        return VCRect(0, 0, _outW, _outH);
+    }
+
+    // </dirty rectangles> 
+   
+
     /** Locate moves the cursor to a specified position on the screen. */
 
     ~this() @trusted
     {
-        free(_text.ptr);
-        free(_back.ptr);
+        free(_text.ptr); // free all text buffers
+        free(_back.ptr); // free all pixel buffers
         free(_charDirty.ptr);
     }
 
@@ -432,13 +511,16 @@ private:
         rgba_t(  0, 255, 255, 255), rgba_t(255, 255, 255, 255),
     ];
 
-    bool _dirtyAllChars = true; // all chars need redraw (font change typically)
+    bool _dirtyAllChars   = true; // all chars need redraw (font change typically)
+    bool _dirtyValidation = true; // if _charDirty already computed
     bool[16] _paletteDirty; // true if this color changed
+    VCRect _lastBounds; // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
     int _backWidth  = -1;
     int _backHeight = -1;
-    rgba_t[] _back   = null;
+    rgba_t[] _back  = null;
+    rgba_t[] _post  = null; // a buffer for effects, unused for now
 
     static struct State
     {
@@ -493,9 +575,11 @@ private:
         if (width != _backWidth || height != _backHeight)
         {
             _dirtyAllChars = true;
-            size_t bytes = width * height * 4;
-            void* p = realloc_c17(_back.ptr, bytes);
-            _back = (cast(rgba_t*)p)[0..width*height];
+            size_t pixels = width * height;
+            size_t bytesPerBuffer = pixels * 4;
+            void* p = realloc_c17(_back.ptr, bytesPerBuffer * 2);
+            _back = (cast(rgba_t*)p)[0..pixels];
+            _post = (cast(rgba_t*)p)[pixels..pixels*2];
             _backHeight = height;
             _backWidth = width;
         }
@@ -507,11 +591,28 @@ private:
     //  - glyph displayed changed
     //  - font changed
     //  - size changed
-    void invalidateChars()
+    //
+    // Returns: the rectangle that need to change, in text buffer coordinates
+    VCRect invalidateChars()
     {
+        // the validation results itself might not need to be recomputed
+        if (!_dirtyValidation)
+            return _lastBounds;
+        _dirtyValidation = false;
+
+        VCRect bounds;
+        bounds.x1 = _columns+1;
+        bounds.y1 = _rows+1;
+        bounds.x2 = -1;
+        bounds.y2 = -1;
+
         if (_dirtyAllChars)
         {
             _charDirty[] = true;
+            bounds.x1 = 0;
+            bounds.y1 = 0;
+            bounds.x2 = _columns;
+            bounds.y2 = _rows;
         }
         else
         {
@@ -529,13 +630,24 @@ private:
                         redraw = true;
                     else if (_paletteDirty[text.color >>> 4])
                         redraw = true;
+                    if (redraw)
+                    {
+                        if (bounds.x1 > col  ) bounds.x1 = col;
+                        if (bounds.y1 > row  ) bounds.y1 = row;
+                        if (bounds.x2 < col+1) bounds.x2 = col+1;
+                        if (bounds.y2 < row+1) bounds.y2 = row+1;
+                    }
                     _charDirty[icell] = redraw;
                 }
             }
         }
-        _dirtyAllChars = false;
-        _paletteDirty[] = false;
-        _cache[] = _text[];
+
+        // make rect empty if nothing found
+        if (bounds.x2 == -1)
+        {
+            bounds = VCRect(0, 0, 0, 0);
+        }
+        return _lastBounds = bounds;
     }
 
 
@@ -585,6 +697,13 @@ private:
                 }
             }
         }
+    }
+
+    void applyEffects()
+    {
+        // nothing yet
+        // FUTURE: effects, must be based upon _charDirty to speed up
+        _post[] = _back[];
     }
 }
 
