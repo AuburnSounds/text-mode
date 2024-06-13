@@ -23,6 +23,8 @@ class TermExample : TurtleGame
     {
     }
 
+    int _fontSel = 0;
+
     override void update(double dt)
     {
         if (keyboard.isDown("escape")) exitGame;
@@ -39,6 +41,19 @@ class TermExample : TurtleGame
                 print(s);
             }
         }
+
+        if (keyboard.isDown("left"))
+        {
+            if (++_fontSel > VCFont.max) 
+                _fontSel = VCFont.min;
+            console.font( cast(VCFont) _fontSel );
+        }
+        if (keyboard.isDown("right"))
+        {
+            if (--_fontSel < VCFont.min) 
+                _fontSel = VCFont.max;
+            console.font( cast(VCFont) _fontSel );
+        }
     }
 
     int ntimes;
@@ -48,7 +63,7 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            outputBuffer(fb.pixels, fb.w, fb.h, fb.pitch);
+            console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
 
             render();
         }

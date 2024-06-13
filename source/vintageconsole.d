@@ -360,16 +360,6 @@ nothrow:
     void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
         @system // memory-safe if pixels in that image addressable
     {
-        // for now, must be same dimensions
-        assert(width >= suggestedWidth);
-        assert(height >= suggestedHeight);
-        
-        if (width != suggestedWidth)
-            width = suggestedWidth;
-        
-        if (height != suggestedHeight)
-            height = suggestedHeight;
-
         _outPixels = pixels;
         _outW = width;
         _outH = height;
@@ -387,7 +377,7 @@ nothrow:
     {
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
-        invalidateChars();
+        VCRect textRect = invalidateChars();
 
         // 1. Draw chars in original size, only those who changed.
         drawAllChars();
@@ -396,23 +386,41 @@ nothrow:
         // from _back to _post.
         applyEffects();
 
-        // from now on, consider everything done.
+        // from now on, consider everything done and _text is up-to-date.
         _dirtyAllChars = false;
         _paletteDirty[] = false;
         _cache[] = _text[];
 
-        // 3. composite to output buffer
+        // dirty rectangle, in _post buffer pixels.
 
-        int backPitch = _columns * charWidth;
-
-        for (int y = 0; y < _outH; ++y)
+        recomputeLayout();
+        VCRect inputRect = transformRectToPostCoord(textRect);
+        if (!inputRect.isEmpty)
         {
-            const(rgba_t)* rendered = &_back[backPitch * y];
-            rgba_t* output = cast(rgba_t*)(_outPixels + _outPitch * y);
+            int postPitch = _columns * charWidth;
 
-            for (int x = 0; x < _outW; ++x)
+            for (int y = inputRect.y1; y < inputRect.y2; ++y)
             {
-                output[x] = blendColor(rendered[x], output[x], rendered.a);
+                const(rgba_t)* postScan = &_post[postPitch * y];
+                for (int x = inputRect.x1; x < inputRect.x2; ++x)
+                {
+                    // Read one pixel, make potentially several in output
+                    // with nearest resampling
+                    rgba_t fg = postScan[x];
+
+                    for (int yy = 0; yy < _outScaleY; ++yy)
+                    {
+                        int outY = y * _outScaleY + yy + _outMarginTop;
+                        rgba_t* outScan = cast(rgba_t*)(_outPixels + _outPitch * outY);
+
+                        for (int xx = 0; xx < _outScaleX; ++xx)
+                        {
+                            int outX = xx + x * _outScaleX + _outMarginLeft;
+                            rgba_t* p = &outScan[outX];
+                            outScan[outX] = blendColor(fg, outScan[outX], fg.a);
+                        }
+                    }
+                }
             }
         }
     }
@@ -445,7 +453,8 @@ nothrow:
         You may also call `hasPendingUpdate()`.
 
         This rectangle is not valid if you use printing or styling functions
-        before calling `render()`.
+        before calling `render()`, change console size, change output buffer,
+        change font, etc.
      */
     VCRect getUpdateRect()
     {
@@ -454,9 +463,8 @@ nothrow:
         if (textRect.isEmpty)
             return VCRect(0, 0, 0, 0);
 
-
-        // TODO: Now, need to change this to output buffer coordinates
-        return VCRect(0, 0, _outW, _outH);
+        recomputeLayout();
+        return transformRectToOutputCoord(textRect);
     }
 
     // </dirty rectangles> 
@@ -550,6 +558,72 @@ private:
     int _outW;
     int _outH;
     ptrdiff_t _outPitch;
+
+    int _outScaleX;
+    int _outScaleY;
+    int _outMarginLeft;
+    int _outMarginTop;
+    int _charMarginX;
+    int _charMarginY;
+
+    // depending on font, console size and outbuf size, compute
+    // the scaling and margins it needs
+    void recomputeLayout()
+    {
+        int cw = charWidth();
+        int ch = charHeight();
+        int outW = _outW;
+        int outH = _outH;
+        int scaleX = _outW / (_columns * cw);
+        int scaleY = _outH / (_rows    * ch);
+        if (scaleX < 1) scaleX = 1;
+        if (scaleY < 1) scaleY = 1;
+        int scale = (scaleX < scaleY) ? scaleX : scaleY;
+        _outScaleX = scale;
+        _outScaleY = scale;
+
+        int remainX = _outW - (_columns * cw) * _outScaleX;
+        int remainY = _outH - (_rows    * ch) * _outScaleY;
+        assert(remainX >= 0 && remainY >= 0);
+        _outMarginLeft = (remainX+1)/2;
+        _outMarginTop  = remainY    /2;
+        _charMarginX = 0; // not implemented
+        _charMarginY = 0; // not implemented
+    }
+
+    // r is in text console coordinates
+    // transform it in post buffer pixel coordinates
+    VCRect transformRectToPostCoord(VCRect r)
+    {
+        if (r.isEmpty)
+            return r;
+        int cw = charWidth();
+        int ch = charHeight();
+        r.x1 *= cw; 
+        r.x2 *= cw;
+        r.y1 *= ch; 
+        r.y2 *= ch;
+        return r;
+    }
+
+    // r is in text console coordinates
+    // transform it in pixel coordinates
+    VCRect transformRectToOutputCoord(VCRect r)
+    {
+        if (r.isEmpty)
+            return r;
+        int cw = charWidth();
+        int ch = charHeight();
+        r.x1 *= cw * _outScaleX; 
+        r.x2 *= cw * _outScaleX;
+        r.y1 *= ch * _outScaleY; 
+        r.y2 *= ch * _outScaleY;
+        r.x1 += _outMarginLeft;
+        r.x2 += _outMarginLeft;
+        r.y1 += _outMarginTop;
+        r.y2 += _outMarginTop;
+        return r;
+    }
 
     void updateTextBufferSize(int columns, int rows) @trusted
     {
