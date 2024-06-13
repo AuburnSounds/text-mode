@@ -48,6 +48,54 @@ pure:
     }
 }
 
+/// How to blend on output buffer?
+enum VCBlendMode
+{
+    /// Blend foreground color (console content) with output, 
+    /// using foreground alpha
+    sourceOver,
+
+    /// Copy foreground color (console content) to output.
+    copy,
+}
+
+/// How to align vertically in output buffer
+enum VCHorzAlign
+{
+    left,
+    center,
+    right
+}
+
+/// How to align vertically in output buffer
+enum VCVertAlign
+{
+    top,
+    middle,
+    bottom
+}
+
+/// Various options to change behaviour of the library.
+struct VCOptions
+{
+    VCBlendMode blendMode = VCBlendMode.sourceOver; ///
+    VCHorzAlign halign = VCHorzAlign.center; ///
+    VCVertAlign valign = VCVertAlign.middle; ///
+
+    /// The output buffer is considered unchanged.
+    /// It is considered our changes are still there and not erased,
+    /// unless the size of the buffer has changed, or its location.
+    bool allowOutCaching;
+    
+    /// Should we draw a border (solid background) around the console area
+    /// if there is some space?
+    bool drawBorder = false; // TODO: not implemented yet
+
+    /// Palette color of the borderColor;
+    ubyte borderColor;
+}
+
+
 /** 
     Main API of the vintage-console library.
 */
@@ -247,6 +295,15 @@ nothrow:
         current.bg = cast(ubyte)bg;
     }
 
+    /** 
+        Set other options.
+     */
+    void options(VCOptions options)
+    {
+        _options = options;
+
+        // TODO: invalidate right stuff
+    }
 
     /// ████████╗███████╗██╗  ██╗████████╗
     /// ╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
@@ -364,6 +421,8 @@ nothrow:
         _outW = width;
         _outH = height;
         _outPitch = pitchBytes;
+
+        // TODO invalidate caching of out buffer (and borders) if something changed
     }
 
     /**
@@ -395,6 +454,17 @@ nothrow:
 
         recomputeLayout();
         VCRect inputRect = transformRectToPostCoord(textRect);
+
+        bool drawBorder = false;
+        if ( (!_options.allowOutCaching) || _dirtyWholeOut)
+        {
+            // We consider that the buffer content wasn't preserved, do it all again.
+
+            VCRect allText = VCRect(0, 0, _columns, _rows); 
+            inputRect = transformRectToPostCoord(allText);
+            drawBorder = _options.drawBorder;
+        }        
+
         if (!inputRect.isEmpty)
         {
             int postPitch = _columns * charWidth;
@@ -411,18 +481,36 @@ nothrow:
                     for (int yy = 0; yy < _outScaleY; ++yy)
                     {
                         int outY = y * _outScaleY + yy + _outMarginTop;
+                        if (outY >= _outH)
+                            continue;
+
                         rgba_t* outScan = cast(rgba_t*)(_outPixels + _outPitch * outY);
 
                         for (int xx = 0; xx < _outScaleX; ++xx)
                         {
                             int outX = xx + x * _outScaleX + _outMarginLeft;
+                            if (outX >= _outW)
+                                continue;
+
                             rgba_t* p = &outScan[outX];
-                            outScan[outX] = blendColor(fg, outScan[outX], fg.a);
+
+                            final switch (_options.blendMode) with (VCBlendMode)
+                            {
+                                case copy:
+                                    outScan[outX] = fg;
+                                    break;
+
+                                case sourceOver:
+                                    outScan[outX] = blendColor(fg, outScan[outX], fg.a);
+                                    break;
+                            }
                         }
                     }
                 }
             }
         }
+
+        _dirtyWholeOut = false;
     }
 
     // <dirty rectangles> 
@@ -458,6 +546,11 @@ nothrow:
      */
     VCRect getUpdateRect()
     {
+        if (_dirtyWholeOut || (!_options.allowOutCaching) )
+        {
+            return VCRect(0, 0, _outW, _outH);
+        }
+
         VCRect textRect = invalidateChars();
 
         if (textRect.isEmpty)
@@ -484,7 +577,9 @@ private:
     // By default, EGA text mode, correspond to a 320x200.
     VCFont _font    = VCFont.pcega;
     int _columns    = -1;
-    int _rows       = -1;    
+    int _rows       = -1;
+
+    VCOptions _options = VCOptions.init;
 
     alias CharFlags = ubyte;
     enum : CharFlags
@@ -521,6 +616,7 @@ private:
 
     bool _dirtyAllChars   = true; // all chars need redraw (font change typically)
     bool _dirtyValidation = true; // if _charDirty already computed
+    bool _dirtyWholeOut   = true; // if out buffer must be redrawn entirely
     bool[16] _paletteDirty; // true if this color changed
     VCRect _lastBounds; // last computed dirty rectangle
 
@@ -584,9 +680,23 @@ private:
 
         int remainX = _outW - (_columns * cw) * _outScaleX;
         int remainY = _outH - (_rows    * ch) * _outScaleY;
-        assert(remainX >= 0 && remainY >= 0);
-        _outMarginLeft = (remainX+1)/2;
-        _outMarginTop  = remainY    /2;
+        if (remainX < 0) remainX = 0;
+        if (remainY < 0) remainY = 0;
+
+        final switch(_options.halign)
+        {
+            case VCHorzAlign.left:    _outMarginLeft = 0; break;
+            case VCHorzAlign.center:  _outMarginLeft = (remainX+1)/2; break;
+            case VCHorzAlign.right:   _outMarginLeft = remainX; break;
+        }
+
+        final switch(_options.valign)
+        {
+            case VCVertAlign.top:     _outMarginTop = 0; break;
+            case VCVertAlign.middle:  _outMarginTop = remainY/2; break;
+            case VCVertAlign.bottom:  _outMarginTop = remainY; break;
+        }
+
         _charMarginX = 0; // not implemented
         _charMarginY = 0; // not implemented
     }
