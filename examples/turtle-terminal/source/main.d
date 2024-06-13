@@ -24,23 +24,12 @@ class TermExample : TurtleGame
     }
 
     int _fontSel = 0;
+    int _palSel = 0;
 
     override void update(double dt)
     {
         if (keyboard.isDown("escape")) exitGame;
 
-        if (keyboard.isDown("space"))
-            with(console)
-        {
-            for (int i = 0; i < 256; ++i)
-            {
-                fg(i & 15);
-                bg(cast(ubyte)(i >>> 4));
-                string s;
-                s ~= cast(char)i;
-                print(s);
-            }
-        }
 
         if (keyboard.isDown("left"))
         {
@@ -54,6 +43,18 @@ class TermExample : TurtleGame
                 _fontSel = VCFont.max;
             console.font( cast(VCFont) _fontSel );
         }
+        if (keyboard.isDown("up"))
+        {
+            if (++_palSel > VCPalette.max) 
+                _palSel = VCPalette.min;
+            console.palette( cast(VCPalette) _palSel );
+        }
+        if (keyboard.isDown("down"))
+        {
+            if (--_palSel < VCPalette.min) 
+                _palSel = VCPalette.max;
+            console.palette( cast(VCPalette) _palSel );
+        }
     }
 
     int ntimes;
@@ -63,8 +64,11 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
+            cls;
+            println("Hello world!");
+            println("Enter prompt: $ABCDEFGH+=");
 
+            console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
             render();
         }
     } 
