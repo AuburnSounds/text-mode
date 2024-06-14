@@ -33,6 +33,10 @@ enum VCPalette
 /// Rectangle.
 struct VCRect
 {
+    // Note: in vintage-console, rectangles exist in:
+    // - text space (0,0)-(columns,rows)
+    // - post-processing space
+    // - out space
 nothrow:
 @nogc:
 @safe:
@@ -82,14 +86,11 @@ struct VCOptions
     VCHorzAlign halign = VCHorzAlign.center; ///
     VCVertAlign valign = VCVertAlign.middle; ///
 
-    /// The output buffer is considered unchanged.
+    /// The output buffer is considered unchanged between calls.
     /// It is considered our changes are still there and not erased,
     /// unless the size of the buffer has changed, or its location.
+    /// In this case we can draw less.
     bool allowOutCaching;
-    
-    /// Should we draw a border (solid background) around the console area
-    /// if there is some space?
-    bool drawBorder = false; // TODO: not implemented yet
 
     /// Palette color of the borderColor;
     ubyte borderColor;
@@ -417,12 +418,20 @@ nothrow:
     void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
         @system // memory-safe if pixels in that image addressable
     {
-        _outPixels = pixels;
-        _outW = width;
-        _outH = height;
-        _outPitch = pitchBytes;
+        if (_outPixels != pixels || _outW != width  
+            || _outH != height || _outPitch != pitchBytes)
+        {
+            _outPixels = pixels;
+            _outW = width;
+            _outH = height;
+            _outPitch = pitchBytes;
 
-        // TODO invalidate caching of out buffer (and borders) if something changed
+            // Consider output dirty
+            _dirtyOut = true;
+
+            // resize post buffer(s)
+            updatePostBufferSize(width, height);
+        }
     }
 
     /**
@@ -430,6 +439,13 @@ nothrow:
 
         Depending on the options, only the rectangle in `getDirtyRectangle()`
         will get updated.
+
+        Here is the flow of information:
+           _text: CharData (dimension of console, eg: 80x25)  
+        => _back: RGBA (console x char size) 
+        => _post: RGBA (out buf size)  
+        => outbuf: RGBA
+
     */
     void render() 
         @system // memory-safe if `outputBuffer()` was called and memory-safe
@@ -438,79 +454,36 @@ nothrow:
         // After that, _charDirty tells if a character need redraw.
         VCRect textRect = invalidateChars();
 
+
         // 1. Draw chars in original size, only those who changed.
         drawAllChars();
 
-        // 2. Again, for chars that are dirty, apply pixel effects,
-        // from _back to _post.
-        applyEffects();
-
-        // from now on, consider everything done and _text is up-to-date.
+        // from now on, consider _text and _back is up-to-date.
+        // this information of recency is still in textRect and _charDirty.
         _dirtyAllChars = false;
-        _paletteDirty[] = false;
         _cache[] = _text[];
 
-        // dirty rectangle, in _post buffer pixels.
-
+        // Recompute placement of text in post buffer.
         recomputeLayout();
-        VCRect inputRect = transformRectToPostCoord(textRect);
 
-        bool drawBorder = false;
-        if ( (!_options.allowOutCaching) || _dirtyWholeOut)
-        {
-            // We consider that the buffer content wasn't preserved, do it all again.
+        // 2. Apply scale, character margins, etc.
+        // Take characters in _back and put them in _post, into the final 
+        // resolution.
+        // This ony needs done for _charDirty.
+        // Borders are drawn if _dirtyPost is true.
+        // _dirtyPost get cleared after that.
+        // Return rectangle that changed
+        VCRect postRect = backToPost(textRect);
 
-            VCRect allText = VCRect(0, 0, _columns, _rows); 
-            inputRect = transformRectToPostCoord(allText);
-            drawBorder = _options.drawBorder;
-        }        
+        // A dirty border color can affect out and post buffers redraw
+        _paletteDirty[] = false;
 
-        if (!inputRect.isEmpty)
-        {
-            int postPitch = _columns * charWidth;
+        // 3. (FUTURE) effect go here. Blur, screen simulation, etc.
+        //    So, effect are applied in final resolution size.
+        applyEffects();
 
-            for (int y = inputRect.y1; y < inputRect.y2; ++y)
-            {
-                const(rgba_t)* postScan = &_post[postPitch * y];
-                for (int x = inputRect.x1; x < inputRect.x2; ++x)
-                {
-                    // Read one pixel, make potentially several in output
-                    // with nearest resampling
-                    rgba_t fg = postScan[x];
-
-                    for (int yy = 0; yy < _outScaleY; ++yy)
-                    {
-                        int outY = y * _outScaleY + yy + _outMarginTop;
-                        if (outY >= _outH)
-                            continue;
-
-                        rgba_t* outScan = cast(rgba_t*)(_outPixels + _outPitch * outY);
-
-                        for (int xx = 0; xx < _outScaleX; ++xx)
-                        {
-                            int outX = xx + x * _outScaleX + _outMarginLeft;
-                            if (outX >= _outW)
-                                continue;
-
-                            rgba_t* p = &outScan[outX];
-
-                            final switch (_options.blendMode) with (VCBlendMode)
-                            {
-                                case copy:
-                                    outScan[outX] = fg;
-                                    break;
-
-                                case sourceOver:
-                                    outScan[outX] = blendColor(fg, outScan[outX], fg.a);
-                                    break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        _dirtyWholeOut = false;
+        // 4. Blend into out buffer.
+        postToOut(textRect);
     }
 
     // <dirty rectangles> 
@@ -546,7 +519,7 @@ nothrow:
      */
     VCRect getUpdateRect()
     {
-        if (_dirtyWholeOut || (!_options.allowOutCaching) )
+        if (_dirtyOut || (!_options.allowOutCaching) )
         {
             return VCRect(0, 0, _outW, _outH);
         }
@@ -569,6 +542,7 @@ nothrow:
     {
         free(_text.ptr); // free all text buffers
         free(_back.ptr); // free all pixel buffers
+        free(_post.ptr);
         free(_charDirty.ptr);
     }
 
@@ -616,15 +590,25 @@ private:
 
     bool _dirtyAllChars   = true; // all chars need redraw (font change typically)
     bool _dirtyValidation = true; // if _charDirty already computed
-    bool _dirtyWholeOut   = true; // if out buffer must be redrawn entirely
+
+    bool _dirtyPost   = true; // if out-sized buffers must be redrawn entirely
+    bool _dirtyOut   = true; // if out-sized buffers must be redrawn entirely
+
     bool[16] _paletteDirty; // true if this color changed
     VCRect _lastBounds; // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
+    // In this buffer, every character is rendered next to each other.
     int _backWidth  = -1;
     int _backHeight = -1;
     rgba_t[] _back  = null;
-    rgba_t[] _post  = null; // a buffer for effects, unused for now
+
+    // A buffer for effects, same size as out buffer (including borders)
+    // in this buffer, scale is applied, margins, and character margins
+    // So its content depends upon outbuffer size.
+    int _postWidth  = -1;
+    int _postHeight = -1;
+    rgba_t[] _post  = null; 
 
     static struct State
     {
@@ -655,19 +639,24 @@ private:
     int _outH;
     ptrdiff_t _outPitch;
 
-    int _outScaleX;
-    int _outScaleY;
-    int _outMarginLeft;
-    int _outMarginTop;
-    int _charMarginX;
-    int _charMarginY;
+    // out and post scale and margins.
+    // if any change, then post and out buffer must be redrawn
+    int _outScaleX     = -1;
+    int _outScaleY     = -1;
+    int _outMarginLeft = -1;
+    int _outMarginTop  = -1;
+    int _charMarginX   = -1;
+    int _charMarginY   = -1;
 
     // depending on font, console size and outbuf size, compute
-    // the scaling and margins it needs
+    // the scaling and margins it needs.
+    // Invalidate out and post buffer if that changed.
     void recomputeLayout()
     {
         int cw = charWidth();
         int ch = charHeight();
+        int columns = _columns;
+        int rows = _rows;
         int outW = _outW;
         int outH = _outH;
         int scaleX = _outW / (_columns * cw);
@@ -675,45 +664,49 @@ private:
         if (scaleX < 1) scaleX = 1;
         if (scaleY < 1) scaleY = 1;
         int scale = (scaleX < scaleY) ? scaleX : scaleY;
-        _outScaleX = scale;
-        _outScaleY = scale;
-
-        int remainX = _outW - (_columns * cw) * _outScaleX;
-        int remainY = _outH - (_rows    * ch) * _outScaleY;
+        int remainX = outW - (columns * cw) * scale;
+        int remainY = outH - (rows    * ch) * scale;
+        assert(remainX <= outW);
+        assert(remainY <= outH);
         if (remainX < 0) remainX = 0;
         if (remainY < 0) remainY = 0;
 
+        int marginLeft;
+        int marginTop;
         final switch(_options.halign)
         {
-            case VCHorzAlign.left:    _outMarginLeft = 0; break;
-            case VCHorzAlign.center:  _outMarginLeft = (remainX+1)/2; break;
-            case VCHorzAlign.right:   _outMarginLeft = remainX; break;
+            case VCHorzAlign.left:    marginLeft = 0; break;
+            case VCHorzAlign.center:  marginLeft = (remainX+1)/2; break;
+            case VCHorzAlign.right:   marginLeft = remainX; break;
         }
 
         final switch(_options.valign)
         {
-            case VCVertAlign.top:     _outMarginTop = 0; break;
-            case VCVertAlign.middle:  _outMarginTop = remainY/2; break;
-            case VCVertAlign.bottom:  _outMarginTop = remainY; break;
+            case VCVertAlign.top:     marginTop = 0; break;
+            case VCVertAlign.middle:  marginTop = remainY/2; break;
+            case VCVertAlign.bottom:  marginTop = remainY; break;
         }
 
-        _charMarginX = 0; // not implemented
-        _charMarginY = 0; // not implemented
-    }
 
-    // r is in text console coordinates
-    // transform it in post buffer pixel coordinates
-    VCRect transformRectToPostCoord(VCRect r)
-    {
-        if (r.isEmpty)
-            return r;
-        int cw = charWidth();
-        int ch = charHeight();
-        r.x1 *= cw; 
-        r.x2 *= cw;
-        r.y1 *= ch; 
-        r.y2 *= ch;
-        return r;
+        int charMarginX = 0; // not implemented
+        int charMarginY = 0; // not implemented
+
+        if (_outMarginLeft != marginLeft
+            || _outMarginTop != marginTop
+            || _charMarginX != charMarginX
+            || _charMarginY != charMarginY 
+            || _outScaleX != scale
+            || _outScaleY != scale)
+        {
+            _dirtyOut = true;
+            _dirtyPost = true;
+            _outMarginLeft = marginLeft;
+            _outMarginTop = marginTop;
+            _charMarginX = charMarginX;
+            _charMarginY = charMarginY;
+            _outScaleX = scale;
+            _outScaleY = scale;
+        }
     }
 
     // r is in text console coordinates
@@ -761,11 +754,24 @@ private:
             _dirtyAllChars = true;
             size_t pixels = width * height;
             size_t bytesPerBuffer = pixels * 4;
-            void* p = realloc_c17(_back.ptr, bytesPerBuffer * 2);
+            void* p = realloc_c17(_back.ptr, bytesPerBuffer);
             _back = (cast(rgba_t*)p)[0..pixels];
-            _post = (cast(rgba_t*)p)[pixels..pixels*2];
             _backHeight = height;
             _backWidth = width;
+        }
+    }
+
+    void updatePostBufferSize(int width, int height) @trusted
+    {
+        if (width != _postWidth || height != _postHeight)
+        {
+            size_t pixels = width * height;
+            size_t bytesPerBuffer = pixels * 4;
+            void* p = realloc_c17(_post.ptr, bytesPerBuffer);
+            _post = (cast(rgba_t*)p)[0..pixels];
+            _postWidth = width;
+            _postHeight = height;
+            _dirtyPost = true;
         }
     }
 
@@ -838,6 +844,7 @@ private:
     // Draw all chars from _text to _back, no caching yet
     void drawAllChars()
     {
+        // PERF: only iterate textRect
         for (int row = 0; row < _rows; ++row)
         {
             for (int col = 0; col < _columns; ++col)
@@ -846,6 +853,121 @@ private:
                     drawChar(col, row);
             }
         }
+    }
+
+    // Draw from _back to _post
+    // Returns changed rect, in pixels
+    VCRect backToPost(VCRect textRect) @trusted
+    {
+        bool drawBorder = false;
+
+        VCRect postRect = transformRectToOutputCoord(textRect);
+
+        if (_dirtyPost)
+        {
+            drawBorder = true;            
+        }
+        if (_paletteDirty[_options.borderColor])
+            drawBorder = true;
+
+        if (drawBorder)
+        {
+            // PERF: only draw the black borders
+            _post[] = _palette[_options.borderColor];
+            postRect = VCRect(0, 0, _postWidth, _postHeight);
+            textRect = VCRect(0, 0, _columns, _rows);
+        }
+
+        // Which chars to copy, with scale and margins applied?
+        for (int row = textRect.y1; row < textRect.y2; ++row)
+        {
+            for (int col = textRect.x1; col < textRect.x2; ++col)
+            {
+                if ( ! ( _charDirty[col + _columns * row] || _dirtyPost) )
+                    continue; // The character didn't change, _post is up-to-date
+
+                copyCharBackToPost(col, row);
+            }
+        }
+        _dirtyPost = false;
+        return postRect;
+    }
+
+    void copyCharBackToPost(int col, int row) @trusted
+    {
+        int cw = charWidth();
+        int ch = charHeight();
+
+        int backPitch = _columns * cw;
+
+        for (int y = row*ch; y < (row+1)*ch; ++y)
+        {
+            const(rgba_t)* backScan = &_back[backPitch * y];
+            for (int x = col*cw; x < (col+1)*cw; ++x)
+            {
+                rgba_t fg = backScan[x];
+                for (int yy = 0; yy < _outScaleY; ++yy)
+                {
+                    int posY = y * _outScaleY + yy + _outMarginTop;
+                    if (posY >= _outH)
+                        continue;
+                    
+                    rgba_t[] postScan = _post[posY * _outW..(posY+1)* _outW];
+
+                    for (int xx = 0; xx < _outScaleX; ++xx)
+                    {
+                        int outX = x * _outScaleX + xx + _outMarginLeft;
+                        if (outX >= _outW)
+                            continue;
+                        postScan[outX] = fg;
+                    }
+                }
+            }
+        }
+    }
+
+    // Draw from _post to _out
+    void postToOut(VCRect textRect) @trusted
+    {
+        // TODO
+
+        /*
+
+        if ( (!_options.allowOutCaching) || _dirtyOut)
+        {
+            // We consider that the buffer content wasn't preserved, do it all again.
+
+            VCRect allText = VCRect(0, 0, _columns, _rows); 
+            inputRect = transformRectToPostCoord(allText);
+            drawBorder = _options.drawBorder;
+        }     
+*/
+
+        VCRect changeRect = VCRect(0, 0, _outW, _outH);
+        for (int y = changeRect.y1; y < changeRect.y2; ++y)
+        {
+            const(rgba_t)* postScan = &_post[_postWidth * y];
+            rgba_t*         outScan = cast(rgba_t*)(_outPixels + _outPitch * y);
+
+            for (int x = changeRect.x1; x < changeRect.x2; ++x)
+            {
+                // Read one pixel, make potentially several in output
+                // with nearest resampling
+                rgba_t fg = postScan[x];
+                final switch (_options.blendMode) with (VCBlendMode)
+                {
+                    case copy:
+                        outScan[x] = fg;
+                        break;
+
+                    case sourceOver:
+                        outScan[x] = blendColor(fg, outScan[x], fg.a);
+                        break;
+                }
+            }
+        }
+
+        _dirtyOut = false;
     }
 
     ref CharData charDataAt(int col, int row) pure return
@@ -886,8 +1008,6 @@ private:
     void applyEffects()
     {
         // nothing yet
-        // FUTURE: effects, must be based upon _charDirty to speed up
-        _post[] = _back[];
     }
 }
 

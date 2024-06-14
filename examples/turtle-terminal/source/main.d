@@ -30,6 +30,19 @@ class TermExample : TurtleGame
     {
         if (keyboard.isDown("escape")) exitGame;
 
+        if (keyboard.isDown("space"))
+            with(console)
+            {
+                for (int i = 0; i < 256; ++i)
+                {
+                    fg(i & 15);
+                    bg(cast(ubyte)(i >>> 4));
+                    string s;
+                    s ~= cast(char)i;
+                    print(s);
+                }
+                println("");
+            }
 
         if (keyboard.isDown("left"))
         {
@@ -64,9 +77,9 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            cls;
-            println("Hello world!");
-            println("Enter prompt: $ABCDEFGH+=");
+        //    cls;
+          //  println("Hello world!");
+            //println("Enter prompt: $ABCDEFGH+=");
 
             console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
             render();
