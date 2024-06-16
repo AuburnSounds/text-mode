@@ -83,17 +83,17 @@ enum VCVertAlign
 struct VCOptions
 {
     VCBlendMode blendMode = VCBlendMode.sourceOver; ///
-    VCHorzAlign halign = VCHorzAlign.center; ///
-    VCVertAlign valign = VCVertAlign.middle; ///
+    VCHorzAlign halign    = VCHorzAlign.center; ///
+    VCVertAlign valign    = VCVertAlign.middle; ///
 
     /// The output buffer is considered unchanged between calls.
     /// It is considered our changes are still there and not erased,
     /// unless the size of the buffer has changed, or its location.
     /// In this case we can draw less.
-    bool allowOutCaching;
+    bool allowOutCaching = true;
 
     /// Palette color of the borderColor;
-    ubyte borderColor;
+    ubyte borderColor = 0;
 }
 
 
@@ -118,6 +118,8 @@ nothrow:
         Set/get size of text buffer.
         Mandatory call.
         Warning: this clears the screen like calling `cls`.
+
+        See_also: outbuf
      */
     void size(int columns, int rows)
     {
@@ -414,6 +416,8 @@ nothrow:
 
     /**
         Setup output buffer.
+
+        Mandatory call, before being able to call `render`.
     */
     void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
         @system // memory-safe if pixels in that image addressable
@@ -456,7 +460,7 @@ nothrow:
 
 
         // 1. Draw chars in original size, only those who changed.
-        drawAllChars();
+        drawAllChars(textRect);
 
         // from now on, consider _text and _back is up-to-date.
         // this information of recency is still in textRect and _charDirty.
@@ -489,8 +493,6 @@ nothrow:
     // <dirty rectangles> 
 
     /**
-
-        (Optional call)
         Return if there are pending updates to draw, to reflect changes
         in text buffer content, colors, style or font used.
         
@@ -830,24 +832,22 @@ private:
                     _charDirty[icell] = redraw;
                 }
             }
+            // make rect empty if nothing found
+            if (bounds.x2 == -1)
+            {
+                bounds = VCRect(0, 0, 0, 0);
+            }
         }
-
-        // make rect empty if nothing found
-        if (bounds.x2 == -1)
-        {
-            bounds = VCRect(0, 0, 0, 0);
-        }
-        return _lastBounds = bounds;
+        _lastBounds = bounds;
+        return bounds;
     }
 
-
     // Draw all chars from _text to _back, no caching yet
-    void drawAllChars()
+    void drawAllChars(VCRect textRect)
     {
-        // PERF: only iterate textRect
-        for (int row = 0; row < _rows; ++row)
+        for (int row = textRect.y1; row < textRect.y2; ++row)
         {
-            for (int col = 0; col < _columns; ++col)
+            for (int col = textRect.x1; col < textRect.x2; ++col)
             {
                 if (_charDirty[col + _columns * row])
                     drawChar(col, row);
@@ -1041,37 +1041,32 @@ rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
     return c;
 }
 
+struct VCFontDesc
+{
+    int[2] charSize;
+    const(ubyte)[] fontData;
+}
+
+static immutable VCFontDesc[VCFont.max + 1] BUILTIN_FONTS =
+[
+    VCFontDesc([8, 8], FONTDATA_IBM_PC_EGA),
+    VCFontDesc([8, 8], FONTDATA_KC853),
+    VCFontDesc([8, 8], FONTDATA_KC854),
+    VCFontDesc([8, 8], FONTDATA_Z1013),
+    VCFontDesc([8, 8], FONTDATA_CPC),
+    VCFontDesc([8, 8], FONTDATA_C64),
+    VCFontDesc([8, 8], FONTDATA_ORIC),
+    VCFontDesc([8, 16], FONTDATA_PCVGA),
+];
+
 int[2] fontCharSize(VCFont font) pure
 {
-    final switch(font) with (VCFont)
-    {
-        case pcega:
-        case kc853:
-        case kc854:
-        case z1013:
-        case cpc:
-        case c64: 
-        case oric:
-            return [8, 8];
-
-        case pcvga:
-            return [8, 16];
-    }
+    return BUILTIN_FONTS[font].charSize;
 }
 
 const(ubyte)[] getFontData(VCFont font) pure
 {
-    final switch(font) with (VCFont)
-    {
-        case pcega: return FONTDATA_IBM_PC_EGA;
-        case kc853: return FONTDATA_KC853;
-        case kc854: return FONTDATA_KC854;
-        case z1013: return FONTDATA_Z1013;
-        case cpc:   return FONTDATA_CPC;
-        case c64:   return FONTDATA_C64;
-        case oric:  return FONTDATA_ORIC;
-        case pcvga: return FONTDATA_PCVGA;
-    }
+    return BUILTIN_FONTS[font].fontData;
 }
 
 static immutable uint[16][VCPalette.max+1] PALETTE_DATA =

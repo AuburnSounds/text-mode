@@ -17,6 +17,7 @@ class TermExample : TurtleGame
 
     override void load()
     {
+        setBackgroundColor(color("rgba(0, 0, 0, 0%)"));
     }
 
     override void mouseMoved(float x, float y, float dx, float dy)
@@ -28,7 +29,7 @@ class TermExample : TurtleGame
 
     override void update(double dt)
     {
-        if (keyboard.isDown("escape")) exitGame;
+        if (keyboard.isDown("escape")) console.cls;
 
         if (keyboard.isDown("space"))
             with(console)
@@ -77,10 +78,10 @@ class TermExample : TurtleGame
 
         with (console)
         {
-        //    cls;
-          //  println("Hello world!");
-            //println("Enter prompt: $ABCDEFGH+=");
-
+            VCOptions options;
+            options.allowOutCaching = true;
+            console.options(options);
+        
             console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
             render();
         }
