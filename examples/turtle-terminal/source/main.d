@@ -11,8 +11,11 @@ class TermExample : TurtleGame
 {
     this()
     {
-        console.size(80, 25);
-        console.font(VCFont.pcvga);
+        console.size(40, 21);
+
+        VCOptions options;
+        options.allowOutCaching = true; // doable because background color is set to transparent
+        console.options(options);
     }
 
     override void load()
@@ -29,9 +32,10 @@ class TermExample : TurtleGame
 
     override void update(double dt)
     {
-        if (keyboard.isDown("escape")) console.cls;
+        if (keyboard.isDown("escape")) exitGame();
 
-        if (keyboard.isDown("space"))
+
+if (keyboard.isDown("space"))
             with(console)
             {
                 for (int i = 0; i < 256; ++i)
@@ -42,20 +46,25 @@ class TermExample : TurtleGame
                     s ~= cast(char)i;
                     print(s);
                 }
-                println("");
             }
 
-        if (keyboard.isDown("left"))
-        {
-            if (++_fontSel > VCFont.max) 
-                _fontSel = VCFont.min;
-            console.font( cast(VCFont) _fontSel );
-        }
-        if (keyboard.isDown("right"))
-        {
-            if (--_fontSel < VCFont.min) 
-                _fontSel = VCFont.max;
-            console.font( cast(VCFont) _fontSel );
+         {
+            with(console)
+            {
+                for (int i = 0; i < 1; ++i)
+                {
+                    int col = cast(int) randNormal(80/2, 40);
+                    int row = cast(int) randNormal(25/2, 12);
+                    int cfg = (cast(int) randNormal(0, 100)) & 15;
+                    int cbg = (cast(int) randNormal(0, 100)) & 15;
+                    fg(cfg);
+                    bg(cbg);
+                    int ch = (cast(int) randNormal(0, 1000)) & 255;   
+                    locate(col, row);
+                    print(cast(char)ch);
+                    println("Hello");
+                }
+            }
         }
         if (keyboard.isDown("up"))
         {
@@ -78,10 +87,6 @@ class TermExample : TurtleGame
 
         with (console)
         {
-            VCOptions options;
-            options.allowOutCaching = true;
-            console.options(options);
-        
             console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
             render();
         }
