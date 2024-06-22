@@ -68,19 +68,21 @@ static struct VCCharData
     // High nibble = background color
     ubyte color     = 8;  
     
-    CharFlags flags = 0; /// Unused for now
+    /// Style of that character
+    VCStyle style; 
 }
 
 ///
-alias CharFlags = ubyte;
+alias VCStyle = ubyte;
 
 ///
-enum : CharFlags
+enum : VCStyle
 {
-    flagBold,      /// not implemented
-    flagUnderline, /// not implemented
-    flagShiny,     /// not implemented
-    flagBlink      /// not implemented
+    VCnone      = 0, /// no style
+    VCbold      = 1, /// <b> or <strong>, not implemented
+    VCitalic    = 2, /// <i> or <em>, not implemented
+    VCunderline = 4, /// <u>, not implemented
+    VCblink     = 8  /// <blink>, not implemented
 }
 
 /// How to blend on output buffer?
@@ -216,7 +218,7 @@ nothrow:
         Warning: This won't report stack errors. Pair your save/restore calls,
                  else endure display bugs.
     */
-    void save()
+    void save() pure
     {
         if (_stateCount == STATE_STACK_DEPTH)
         {
@@ -227,11 +229,11 @@ nothrow:
         _stateCount += 1;
     }
     ///ditto
-    void restore()
+    void restore() pure
     {
-        if (_stateCount < 0)
-        _stateCount -= 1;
-        
+        // stack underflow is ignored.
+        if (_stateCount >= 0)
+            _stateCount -= 1;
     }
 
 
@@ -319,7 +321,7 @@ nothrow:
     /**
         Set foreground color.
      */
-    void fg(int fg)
+    void fg(int fg) pure
     {
         assert(fg >= 0 && fg < 16);
         current.fg = cast(ubyte)fg;
@@ -328,10 +330,18 @@ nothrow:
     /**
         Set background color.
      */
-    void bg(int bg)
+    void bg(int bg) pure
     {
         assert(bg >= 0 && bg < 16);
         current.bg = cast(ubyte)bg;
+    }
+
+    /**
+        Set character attributes aka style.
+     */
+    void style(VCStyle s) pure
+    {
+        current.style = s;
     }
 
     /** 
@@ -410,7 +420,7 @@ nothrow:
             VCCharData* cdata = &_text[col + row * _columns];
             cdata.glyph = ch;
             cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
-            cdata.flags = current.flags;
+            cdata.style = current.style;
             _dirtyValidation = true;
         }
 
@@ -499,6 +509,47 @@ nothrow:
     {
         if ((y >= 0) && (y < _rows))
             current.crow = y;
+    }
+
+    /**
+        Print text to console at current cursor position, encoded in the CCL
+        language (same as in console-colors DUB package).
+        Text input MUST be UTF-8 or Unicode codepoint.
+
+        Accepted tags:
+        - <COLORNAME> such as:
+          <black> <red>      <green>   <orange>
+          <blue>  <magenta>  <cyan>    <lgrey> 
+          <grey>  <lred>     <lgreen>  <yellow>
+          <lblue> <lmagenta> <lcyan>   <white>
+
+        each corresponding to color 0 to 15 in the palette.
+
+        Unknown tags have no effect and are removed.
+        Tags CAN'T have attributes.
+        Here, CCL is modified to be ALWAYS VALID.
+
+        - STYLE tags, such as:
+        <strong>, <b>, <em>, <i>, <u>, <blink>
+
+        Escaping:
+        - To pass '<' as text and not a tag, use &lt;
+        - To pass '>' as text and not a tag, use &gt;
+        - To pass '&' as text not an entity, use &amp;
+
+        See_also: `print`
+    */
+    void cprint(const(char)[] s) pure
+    {
+        CCLInterpreter interp;
+        interp.initialize(&this);
+        interp.interpret(s);
+    }
+    ///ditto
+    void cprintln(const(char)[] s) pure
+    {
+        cprint(s);
+        newline();
     }
 
     // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗ ██╗███╗   ██╗ ██████╗ 
@@ -630,9 +681,7 @@ nothrow:
     }
 
     // </dirty rectangles> 
-   
 
-    /** Locate moves the cursor to a specified position on the screen. */
 
     ~this() @trusted
     {
@@ -696,7 +745,11 @@ private:
         ubyte fg       = 8;
         int ccol = 0; // curor col  (X position)
         int crow = 0; // cursor row (Y position)
-        CharFlags flags = 0;
+        VCStyle style = 0;
+
+        // for the CCL interpreter
+        const(char)[] lastAppliedTag;
+        int inputPos; // position of the opening tag in input chars.
     }
 
     enum STATE_STACK_DEPTH = 32;
@@ -1311,8 +1364,6 @@ static immutable ubyte[96 * 8] LOWER_ANSI =
     0xe0, 0x30, 0x30, 0x1c, 0x30, 0x30, 0xe0, 0x00, // U+007D
     0x76, 0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+007E
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+007F Delete
-
-
 ];
 
 /* CP437 upper range
@@ -1482,3 +1533,412 @@ static immutable ubyte[96 * 8] LOWER_ANSI =
             0x00, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00,
 
             */
+
+
+
+struct CCLInterpreter
+{
+public:
+nothrow:
+@nogc:
+pure:
+
+    void initialize(VCConsole* console)
+    {
+        this.console = console;
+    }
+
+    void interpret(const(char)[] s)
+    {
+        input = s;
+        inputPos = 0;
+
+        bool finished = false;
+        bool termTextWasOutput = false;
+        while(!finished)
+        {
+            final switch (_parserState)
+            {
+                case ParserState.initial:
+
+                    Token token = getNextToken();
+                    final switch(token.type)
+                    {
+                        case TokenType.tagOpen:
+                            {
+                                enterTag(token.text, token.inputPos);
+                                break;
+                            }
+
+                        case TokenType.tagClose:
+                            {
+                                exitTag(token.text, token.inputPos);
+                                break;
+                            }
+
+                        case TokenType.tagOpenClose:
+                            {
+                                enterTag(token.text, token.inputPos);
+                                exitTag(token.text, token.inputPos);
+                                break;
+                            }
+
+                        case TokenType.text:
+                            {
+                                console.print(token.text);
+                                break;
+                            }
+
+                        case TokenType.endOfInput:
+                            finished = true;
+                            break;
+
+                    }
+                    break;
+            }
+        }
+
+        // Is there any unclosed tags? Ignore.
+    }
+
+private:
+
+    VCConsole* console;
+
+    void setColor(int col, bool bg) nothrow @nogc
+    {
+        if (bg) 
+            console.bg(col);
+        else 
+            console.fg(col);
+    }
+
+    void setStyle(VCStyle s) pure
+    {
+        console.style(s);
+    }
+
+    void enterTag(const(char)[] tagName, int inputPos)
+    {
+        // dup top of stack, set foreground color
+        console.save();
+
+        VCStyle currentStyle = console.current.style;
+
+        switch(tagName)
+        {
+            case "b":
+            case "strong":
+                setStyle(currentStyle | VCbold);
+                break;
+
+            case "em":
+            case "i":
+                setStyle(currentStyle | VCitalic);
+                break;
+
+            case "blink":
+                setStyle(currentStyle | VCblink);
+                break;
+
+            case "u":
+                setStyle(currentStyle | VCunderline);
+                break;
+
+            default:
+                {
+                    bool bg = false;
+                    if ((tagName.length >= 3) && (tagName[0..3] == "on_"))
+                    {
+                        tagName = tagName[3..$];
+                        bg = true;
+                    }       
+
+                    switch(tagName)
+                    {
+                        case "black":    setColor( 0, bg); break;
+                        case "red":      setColor( 1, bg); break;
+                        case "green":    setColor( 2, bg); break;
+                        case "orange":   setColor( 3, bg); break;
+                        case "blue":     setColor( 4, bg); break;
+                        case "magenta":  setColor( 5, bg); break;
+                        case "cyan":     setColor( 6, bg); break;
+                        case "lgrey":    setColor( 7, bg); break;
+                        case "grey":     setColor( 8, bg); break;
+                        case "lred":     setColor( 9, bg); break;
+                        case "lgreen":   setColor(10, bg); break;
+                        case "yellow":   setColor(11, bg); break;
+                        case "lblue":    setColor(12, bg); break;
+                        case "lmagenta": setColor(13, bg); break;
+                        case "lcyan":    setColor(14, bg); break;
+                        case "white":    setColor(15, bg); break;
+                        default:
+                            break; // unknown tag
+                    }
+                }
+        }
+    }
+
+    void exitTag(const(char)[] tagName, int inputPos)
+    {
+        if (tagName != "" && console.current.lastAppliedTag != tagName)
+        {
+            // ignore the error of mismatched name in closing tags (sorry)
+        }
+
+        console.restore();
+    }
+
+    // <parser>
+
+    ParserState _parserState = ParserState.initial;
+    enum ParserState
+    {
+        initial
+    }
+
+    // </parser>
+
+    // <lexer>
+
+    const(char)[] input;
+    int inputPos;
+
+    LexerState _lexerState = LexerState.initial;
+    enum LexerState
+    {
+        initial,
+        insideEntity,
+        insideTag,
+    }
+
+    enum TokenType
+    {
+        tagOpen,      // <red>
+        tagClose,     // </red>
+        tagOpenClose, // <red/> 
+        text,
+        endOfInput
+    }
+
+    static struct Token
+    {
+        TokenType type;
+
+        // name of tag, or text
+        const(char)[] text = null; 
+
+        // position in input text
+        int inputPos = 0;
+    }
+
+    bool hasNextChar()
+    {
+        return inputPos < input.length;
+    }
+
+    char peek()
+    {
+        return input[inputPos];
+    }
+
+    const(char)[] lastNChars(int n)
+    {
+        return input[inputPos - n .. inputPos];
+    }
+
+    const(char)[] charsSincePos(int pos)
+    {
+        return input[pos .. inputPos];
+    }
+
+    void next()
+    {
+        inputPos += 1;
+        assert(inputPos <= input.length);
+    }
+
+    Token getNextToken()
+    {
+        Token r;
+        r.inputPos = inputPos;
+
+        if (!hasNextChar())
+        {
+            r.type = TokenType.endOfInput;
+            return r;
+        }
+        else if (peek() == '<')
+        {
+            int posOfLt = inputPos;
+
+            // it is a tag
+            bool closeTag = false;
+            next;
+            if (!hasNextChar())
+            {
+                // input terminate on "<", return end of input instead of error
+                r.type = TokenType.endOfInput;
+                return r;
+            }
+
+            char ch2 = peek();
+            if (peek() == '/')
+            {
+                closeTag = true;
+                next;
+                if (!hasNextChar())
+                {
+                    // input terminate on "</", return end of input instead of error
+                    r.type = TokenType.endOfInput;
+                    return r;
+                }
+            }
+
+            const(char)[] tagName;
+            int startOfTagName = inputPos;
+
+            while(hasNextChar())
+            {
+                char ch = peek();
+                if (ch == '/')
+                {
+                    tagName = charsSincePos(startOfTagName);
+                    if (closeTag)
+                    {
+                        // tag is malformed such as: </lol/>
+                        // ignore the whole tag
+                        r.type = TokenType.endOfInput;
+                        return r;
+                    }
+
+                    next;
+                    if (!hasNextChar())
+                    {
+                        // tag is malformed such as: <like-that/ 
+                        // ignore the whole tag
+                        r.type = TokenType.endOfInput;
+                        return r;
+                    }
+
+                    if (peek() == '>')
+                    {
+                        next;
+                        r.type = TokenType.tagOpenClose;
+                        r.text = tagName;
+                        return r;
+                    }
+                    else
+                    {
+                        // last > is missing, do it anyway
+                        // <lol/   => <lol/>
+                        r.type = TokenType.tagOpenClose;
+                        r.text = tagName;
+                        return r;
+                    }
+                }
+                else if (ch == '>')
+                {
+                    tagName = charsSincePos(startOfTagName);
+                    next;
+                    r.type = closeTag ? TokenType.tagClose : TokenType.tagOpen;
+                    r.text = tagName;
+                    return r;
+                }
+                else
+                {
+                    // Note: ignore invalid character in tag names
+                    next;
+                }
+            }
+            if (closeTag)
+            {
+                // ignore unterminated tag
+            }
+            else
+            {
+                // ignore unterminated tag
+            }
+
+            // there was an error, terminate input
+            {
+                // input terminate on "<", return end of input instead of error
+                r.type = TokenType.endOfInput;
+                return r;
+            }
+        }
+        else if (peek() == '&')
+        {
+            // it is an HTML entity
+            next;
+            if (!hasNextChar())
+            {
+                // no error for no entity name
+            }
+
+            int startOfEntity = inputPos;
+            while(hasNextChar())
+            {
+                char ch = peek();
+                if (ch == ';')
+                {
+                    const(char)[] entityName = charsSincePos(startOfEntity);
+                    switch (entityName)
+                    {
+                        case "lt": r.text = "<"; break;
+                        case "gt": r.text = ">"; break;
+                        case "amp": r.text = "&"; break;
+                        default: 
+                            // unknown entity, ignore
+                            goto nothing;
+                    }
+                    next;
+                    r.type = TokenType.text;
+                    return r;
+                }
+                else if ((ch >= 'a' && ch <= 'z') || (ch >= 'a' && ch <= 'z'))
+                {
+                    next;
+                }
+                else
+                {
+                    // illegal character in entity
+                    goto nothing;
+                }
+            }
+
+            nothing:
+
+            // do nothing, ignore an unrecognized entity or empty one, but terminate input
+            {
+                // input terminate on "<", return end of input instead of error
+                r.type = TokenType.endOfInput;
+                return r;
+            }
+            
+        }
+        else 
+        {
+            int startOfText = inputPos;
+            while(hasNextChar())
+            {
+                char ch = peek();
+
+                // Note: > accepted here without escaping.
+                    
+                if (ch == '<') 
+                    break;
+                if (ch == '&') 
+                    break;
+                next;
+            }
+            assert(inputPos != startOfText);
+            r.type = TokenType.text;
+            r.text = charsSincePos(startOfText);
+            return r;
+        }
+    }
+}
+
+
+
