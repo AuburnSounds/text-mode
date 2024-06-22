@@ -6,6 +6,7 @@ import core.memory;
 import core.stdc.stdlib: realloc, free;
 
 import std.utf: byDchar;
+import std.math: abs, exp;
 
 /// Selected vintage font
 /// There is only one font, our goal it provide a Unicode 8x8 font suitable
@@ -82,7 +83,8 @@ enum : VCStyle
     VCbold      = 1, /// <b> or <strong>, not implemented
     VCitalic    = 2, /// <i> or <em>, not implemented
     VCunderline = 4, /// <u>, not implemented
-    VCblink     = 8  /// <blink>, not implemented
+    VCblink     = 8, /// <blink>, not implemented
+    VCshiny     = 16 /// <shiny>, emissive light
 }
 
 /// How to blend on output buffer?
@@ -530,7 +532,7 @@ nothrow:
         Here, CCL is modified to be ALWAYS VALID.
 
         - STYLE tags, such as:
-        <strong>, <b>, <em>, <i>, <u>, <blink>
+        <strong>, <b>, <em>, <i>, <u>, <blink>, <shiny>
 
         Escaping:
         - To pass '<' as text and not a tag, use &lt;
@@ -586,13 +588,13 @@ nothrow:
     /**
         Render console to output buffer.
 
-        Depending on the options, only the rectangle in `getDirtyRectangle()`
+        Depending on the options, only the rectangle in `getUpdateRect()`
         will get updated.
 
         Here is the flow of information:
-           _text: CharData (dimension of console, eg: 80x25)  
+           _text: CharData (dimension of console, eg: 80x25)
         => _back: RGBA (console x char size) 
-        => _post: RGBA (out buf size)  
+        => _post, _blur, _emissive: RGBA (out buf size)
         => outbuf: RGBA
 
     */
@@ -602,7 +604,6 @@ nothrow:
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
         VCRect textRect = invalidateChars();
-
 
         // 1. Draw chars in original size, only those who changed.
         drawAllChars(textRect);
@@ -627,9 +628,9 @@ nothrow:
         // A dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
 
-        // 3. (FUTURE) effect go here. Blur, screen simulation, etc.
+        // 3. Effect go here. Blur, screen simulation, etc.
         //    So, effect are applied in final resolution size.
-        applyEffects();
+        applyEffects(postRect);
 
         // 4. Blend into out buffer.
         postToOut(textRect);
@@ -677,7 +678,11 @@ nothrow:
             return VCRect(0, 0, 0, 0);
 
         recomputeLayout();
-        return transformRectToOutputCoord(textRect);
+
+        VCRect r = transformRectToOutputCoord(textRect);
+
+        // extend it to account for blur
+        return extendByFilterWidth(r);
     }
 
     // </dirty rectangles> 
@@ -738,6 +743,19 @@ private:
     int _postWidth  = -1;
     int _postHeight = -1;
     rgba_t[] _post  = null; 
+
+    rgba_t[] _blur  = null; // a buffer that is a copy of _post, with 
+                            // blur applied
+
+    // if true, whole blur must be redone
+    bool _dirtyBlur = false;
+    int _filterWidth; // filter width of gaussian blur, in pixels
+    float[MAX_FILTER_WIDTH] _gaussianKernel;
+    enum MAX_FILTER_WIDTH = 63; // presumably this is too slow beyond that
+
+    // note: those two buffers are fake-linear, premul alpha
+    rgba16_t[] _emissive  = null;  // color of emissive, if any
+    rgba16_t[] _emissiveH  = null; // color of emissive, blurred horizontally, if any
 
     static struct State
     {
@@ -839,6 +857,8 @@ private:
             _charMarginY = charMarginY;
             _outScaleX = scale;
             _outScaleY = scale;
+
+            updateFilterSize(scale * cw * 2); // FUTURE: tune in order to maximize beauty
         }
     }
 
@@ -858,6 +878,22 @@ private:
         r.x2 += _outMarginLeft;
         r.y1 += _outMarginTop;
         r.y2 += _outMarginTop;
+        return r;
+    }
+
+    // extend rect in output coordinates, by filter radius
+
+    VCRect extendByFilterWidth(VCRect r)
+    {
+        int filterRadius = _filterWidth/2;
+        r.x1 -= filterRadius;
+        r.x2 += filterRadius;
+        r.y1 -= filterRadius;
+        r.y2 += filterRadius;
+        if (r.x1 < 0) r.x1 = 0;
+        if (r.y1 < 0) r.y1 = 0;
+        if (r.x2 > _outW) r.x2 = _outW;
+        if (r.y2 > _outH) r.y2 = _outH;
         return r;
     }
 
@@ -903,11 +939,35 @@ private:
         {
             size_t pixels = width * height;
             size_t bytesPerBuffer = pixels * 4;
-            void* p = realloc_c17(_post.ptr, bytesPerBuffer);
+            void* p = realloc_c17(_post.ptr, bytesPerBuffer * 6);
             _post = (cast(rgba_t*)p)[0..pixels];
+            _blur = (cast(rgba_t*)p)[pixels..pixels*2];
+            _emissive = (cast(rgba16_t*)p)[pixels..pixels*2];
+            _emissiveH = (cast(rgba16_t*)p)[pixels*2..pixels*4];
             _postWidth = width;
             _postHeight = height;
             _dirtyPost = true;
+        }
+    }
+
+    void updateFilterSize(int filterSize)
+    {
+        // must be odd
+        if ( (filterSize % 2) == 0 )
+            filterSize++;
+
+        // max filter size
+        if (filterSize > MAX_FILTER_WIDTH)
+            filterSize = MAX_FILTER_WIDTH;
+
+        if (filterSize != _filterWidth)
+        {
+            _filterWidth = filterSize;
+
+            double sigma = (filterSize - 1) / 6.0;
+            double mu = 0.0;
+            makeGaussianKernel(filterSize, sigma, mu, _gaussianKernel[]);
+            _dirtyBlur = true;
         }
     }
 
@@ -1017,17 +1077,19 @@ private:
         {
             for (int col = textRect.x1; col < textRect.x2; ++col)
             {
-                if ( ! ( _charDirty[col + _columns * row] || _dirtyPost) )
+                int charIndex = col + _columns * row;
+                if ( ! ( _charDirty[charIndex] || _dirtyPost) )
                     continue; // The character didn't change, _post is up-to-date
 
-                copyCharBackToPost(col, row);
+                bool shiny = (_text[charIndex].style & VCshiny) != 0;
+                copyCharBackToPost(col, row, shiny);
             }
         }
         _dirtyPost = false;
         return postRect;
     }
 
-    void copyCharBackToPost(int col, int row) @trusted
+    void copyCharBackToPost(int col, int row, bool shiny) @trusted
     {
         int cw = charWidth();
         int ch = charHeight();
@@ -1047,6 +1109,7 @@ private:
                         continue;
                     
                     rgba_t[] postScan = _post[posY * _outW..(posY+1)* _outW];
+                    rgba16_t[] emScan = _emissive[posY * _outW..(posY+1)* _outW];
 
                     for (int xx = 0; xx < _outScaleX; ++xx)
                     {
@@ -1054,6 +1117,15 @@ private:
                         if (outX >= _outW)
                             continue;
                         postScan[outX] = fg;
+                        emScan[outX] = rgba16_t(0, 0, 0, 0);
+                        if (shiny)
+                        {
+                            // premul and pow^2, better for blur
+                            emScan[outX].r = cast(ushort)( (fg.r * 255 * fg.a) >> 8 );
+                            emScan[outX].g = cast(ushort)( (fg.g * 255 * fg.a) >> 8 );
+                            emScan[outX].b = cast(ushort)( (fg.b * 255 * fg.a) >> 8 );
+                            emScan[outX].a = cast(ushort)( (fg.a * 255 * fg.a) >> 8 );
+                        }
                     }
                 }
             }
@@ -1065,6 +1137,9 @@ private:
     {
         VCRect changeRect = transformRectToOutputCoord(textRect);
 
+        // Extend it to account for blur
+        changeRect = extendByFilterWidth(changeRect);
+
         if ( (!_options.allowOutCaching) || _dirtyOut)
         {
             // No caching-case, redraw everything we now from _post.
@@ -1074,7 +1149,7 @@ private:
 
         for (int y = changeRect.y1; y < changeRect.y2; ++y)
         {
-            const(rgba_t)* postScan = &_post[_postWidth * y];
+            const(rgba_t)* postScan = &_blur[_postWidth * y];
             rgba_t*         outScan = cast(rgba_t*)(_outPixels + _outPitch * y);
 
             for (int x = changeRect.x1; x < changeRect.x2; ++x)
@@ -1131,9 +1206,97 @@ private:
         }
     }
 
-    void applyEffects()
+    // copy _post to _blur (same space)
+    // _blur is _post + filtered _emissive
+    void applyEffects(VCRect updateRect) @trusted
     {
-        // nothing yet
+        if (_dirtyBlur)
+        {
+            updateRect = VCRect(0, 0, _outW, _outH);
+            _dirtyBlur = false;
+        }
+
+        // PERF: transpose intermediate buffer _emissiveH
+        // PERF: alpha useless in _emissive
+        // PERF: alpha useless in _emissiveH
+
+        int fWidthDiv2 = _filterWidth / 2;
+
+        // blur emissive horizontally, from _emissive to _emissiveH
+        for (int y = updateRect.y1; y < updateRect.y2; ++y)
+        {
+            rgba16_t* emissiveScan = &_emissive[_postWidth * y]; 
+            rgba16_t* emissiveHScan = &_emissiveH[_postWidth * y]; 
+            for (int x = updateRect.x1; x < updateRect.x2; ++x)
+            {  
+                if (x < 0) continue;
+                if (x >= _postWidth) continue;
+
+                float r = 0, g = 0, b = 0;
+                float[] kernel = _gaussianKernel;
+                for (int n = -fWidthDiv2; n <= fWidthDiv2; ++n)
+                {
+                    int xe = x + n;
+                    if (xe < 0) continue;
+                    if (xe >= _postWidth) continue;
+                    rgba16_t emissive = emissiveScan[xe];
+                    float factor = _gaussianKernel[fWidthDiv2 + n];
+                    r += emissive.r * factor;
+                    g += emissive.g * factor;
+                    b += emissive.b * factor;
+                }
+                emissiveHScan[x].r = cast(ushort)r;
+                emissiveHScan[x].g = cast(ushort)g;
+                emissiveHScan[x].b = cast(ushort)b;
+            }
+        }
+
+        // Note: updateRect is now extended horizontally by fWidthDiv2 on each
+        // sides, since the update rect of _emissiveH is larger.
+
+        for (int y = updateRect.y1; y < updateRect.y2; ++y)
+        {
+ 
+            const(rgba_t)* postScan = &_post[_postWidth * y];
+            rgba_t*        blurScan = &_blur[_postWidth * y];
+
+            for (int x = updateRect.x1 - fWidthDiv2; x < updateRect.x2 + fWidthDiv2; ++x)
+            {
+                // blur vertically
+                float r = 0, g = 0, b = 0;        
+                if (x < 0) continue;
+                if (x >= _postWidth) continue;
+
+                for (int n = -fWidthDiv2; n <= fWidthDiv2; ++n)
+                {
+                    int ye = y + n;
+                    if (ye < 0) continue;
+                    if (ye >= _postHeight) continue;
+                    rgba16_t emissiveH = _emissiveH[_postWidth * ye + x];
+                    float factor = _gaussianKernel[fWidthDiv2 + n];
+                    r += emissiveH.r * factor;
+                    g += emissiveH.g * factor;
+                    b += emissiveH.b * factor;
+                }
+
+                static ubyte clamp_0_255(float t)
+                {
+                    int u = cast(int)t;
+                    if (u > 255) u = 255;
+                    if (u < 0) u = 0;
+                    return cast(ubyte)u;
+                }
+
+                // TODO tune
+                enum float BLUR_AMOUNT = 1.05 / 255.0f;//0.01;//.52892;
+
+                rgba_t post = postScan[x];
+                post.r = clamp_0_255(post.r + r * BLUR_AMOUNT);
+                post.g = clamp_0_255(post.g + g * BLUR_AMOUNT);
+                post.b = clamp_0_255(post.b + b * BLUR_AMOUNT);
+                blurScan[x] = post;
+            }
+        }
     }
 }
 
@@ -1142,6 +1305,11 @@ private:
 struct rgba_t
 {
     ubyte r, g, b, a;
+}
+
+struct rgba16_t
+{
+    ushort r, g, b, a;
 }
 
 void* realloc_c17(void* p, size_t size) @system
@@ -1535,7 +1703,7 @@ static immutable ubyte[96 * 8] LOWER_ANSI =
             */
 
 
-
+// CCL interpreter implementation
 struct CCLInterpreter
 {
 public:
@@ -1645,6 +1813,10 @@ private:
                 setStyle(currentStyle | VCunderline);
                 break;
 
+            case "shiny":
+                setStyle(currentStyle | VCshiny);
+                break;
+
             default:
                 {
                     bool bg = false;
@@ -1686,7 +1858,12 @@ private:
             // ignore the error of mismatched name in closing tags (sorry)
         }
 
+        // restore, but keep cursor position²
+        int savedCol = console.current.ccol;
+        int savedRow = console.current.crow;
         console.restore();
+        console.current.ccol = savedCol;
+        console.current.crow = savedRow;
     }
 
     // <parser>
@@ -1941,4 +2118,53 @@ private:
 }
 
 
+// Make 1D separable gaussian kernel
+void makeGaussianKernel(int len, 
+                        float sigma, 
+                        float mu, 
+                        float[] outtaps)
+{
+    assert( (len % 2) == 1);
+    assert(len <= outtaps.length);
 
+    int taps = len/2;
+
+    double last_int = def_int_gaussian(-taps, mu, sigma);
+    double sum = 0;
+    for (int x = -taps; x <= taps; ++x)
+    {
+        double new_int = def_int_gaussian(x + 1, mu, sigma);
+        double c = new_int - last_int;
+
+        last_int = new_int;
+
+        outtaps[x + taps] = c;
+        sum += c;
+    }
+
+    // DC-normalize
+    for (int x = 0; x < len; ++x)
+    {
+        outtaps[x] /= sum;
+    }
+}
+
+double erf(double x) pure
+{
+    // constants
+    double a1 = 0.254829592;
+    double a2 = -0.284496736;
+    double a3 = 1.421413741;
+    double a4 = -1.453152027;
+    double a5 = 1.061405429;
+    double p = 0.3275911;
+    // A&S formula 7.1.26
+    double t = 1.0 / (1.0 + p * abs(x));
+    double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp(-x * x);
+    return (x >= 0 ? 1 : -1) * y;
+}
+
+double def_int_gaussian(double x, double mu, double sigma) pure
+{
+    return 0.5 * erf((x - mu) / (1.41421356237 * sigma));
+}
