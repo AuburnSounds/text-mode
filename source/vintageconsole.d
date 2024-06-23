@@ -8,15 +8,18 @@ import core.stdc.stdlib: realloc, free;
 import std.utf: byDchar;
 import std.math: abs, exp;
 
+nothrow:
+@nogc:
+@safe:
 
 /** 
     An individual cell of text-mode buffer.
 
     Either you access it or use the `print` functions.
 
-    The first four bytes are a Unicode codepoint, conflated with a grapheme
-    and font "glyph". There is only one font, and it's 8x8, not all codepoints
-    exist.
+    The first four bytes are a Unicode codepoint, conflated with a 
+    grapheme and font "glyph". There is only one font, and it's 8x8. 
+    Not all codepoints exist in that font.
 
     The next 4-bit are foreground color in a 16 color palette.
     The next 4-bit are background color in a 16 color palette.
@@ -55,7 +58,8 @@ enum : VCStyle
 
 /**
     Predefined palettes (default: vintage is loaded).
-    You can either load a predefined palette, or change colors individually.
+    You can either load a predefined palette, or change colors 
+    individually.
  */
 enum VCPalette
 {
@@ -90,8 +94,8 @@ pure:
 }
 
 /// Selected vintage font.
-/// There is only one font, our goal it provide a Unicode 8x8 font suitable
-/// for most languages, others were removed. 
+/// There is only one font, our goal it provide a Unicode 8x8 
+/// font suitable for most languages, so others were removed. 
 /// A text mode with `dchar` as input.
 enum VCFont
 {
@@ -142,14 +146,27 @@ struct VCOptions
 
     /// Palette color of the borderColor;
     ubyte borderColor = 0;
+
+    /// Quantity of blur added by VCshiny / <shiny>
+    float blurAmount = 1.0f;
+
+    /// Kernel size in multiple of character width.
+    /// This changes the blur quality.
+    float blurScale = 2.0f;
+
+    /// Enable or disable tonemapping. A way to mix excess energy 
+    /// from blur.
+    bool tonemapping = true;
 }
 
 
 /** 
     Main API of the vintage-console library.
 
-    Note: none of the `VCConsole` functions are thread-safe. Either call them
-          single-threaded, or synchronize externally.
+    Note: none of the `VCConsole` functions are thread-safe. Either 
+          call them single-threaded, or synchronize externally.
+          None of them can be called concurrently, unless it's 
+          different `VCConsole` objects.
 */
 struct VCConsole
 {
@@ -184,10 +201,10 @@ nothrow:
     }
 
     /**
-        Given selected font and size of console screen, give a suggested output
-        buffer size (in pixels).
-        However, this library will manage to render in whatever buffer size you 
-        give, so this is completely optional.
+        Given selected font and size of console screen, give a 
+        suggested output buffer size (in pixels).
+        However, this library will manage to render in whatever 
+        buffer size you give, so this is completely optional.
     */
     int suggestedWidth()
     {
@@ -196,7 +213,7 @@ nothrow:
     ///ditto
     int suggestedHeight()
     {
-        return _rows * charHeight();
+        return _rows    * charHeight();
     }
 
     /**
@@ -207,7 +224,7 @@ nothrow:
     /**
         Get number of text rows.
      */
-    int rows() pure const { return _columns; }
+    int rows()    pure const { return _columns; }
 
 
 
@@ -217,6 +234,31 @@ nothrow:
     // ╚════██║   ██║     ╚██╔╝  ██║     ██╔══╝
     // ███████║   ██║      ██║   ███████╗███████╗
 
+    /**
+        Set current foreground color.
+     */
+    void fg(int fg) pure
+    {
+        assert(fg >= 0 && fg < 16);
+        current.fg = cast(ubyte)fg;
+    }
+
+    /**
+        Set current background color.
+     */
+    void bg(int bg) pure
+    {
+        assert(bg >= 0 && bg < 16);
+        current.bg = cast(ubyte)bg;
+    }
+
+    /**
+        Set current character attributes aka style.
+     */
+    void style(VCStyle s) pure
+    {
+        current.style = s;
+    }
 
     /** 
         Save/restore state, that includes:
@@ -225,8 +267,9 @@ nothrow:
         - cursor position
         - character style
 
-        Warning: This won't report stack errors. Pair your save/restore calls,
-                 else endure display bugs.
+        Note: This won't report stack errors.
+              You MUST pair your save/restore calls, or endure 
+              eventual display bugs.
     */
     void save() pure
     {
@@ -267,7 +310,9 @@ nothrow:
     }
 
     /**
-        Get width/height of a character with current font and scale, in pixels.
+        Get width/height of a character in selected font.
+        Normally you don't need this since the actual size in output
+        buffer is different.
     */
     int charWidth() pure const
     {
@@ -297,14 +342,17 @@ nothrow:
 
     /**
         Set/get palette entries.
+
         Params: entry Palette index, must be 0 <= entry <= 15
                 r Red value, 0 to 255
                 g Green value, 0 to 255
                 b Blue value, 0 to 255
-                a Alpha value, 0 to 255. As background color, alpha is always
-                  considered 255.
+                a Alpha value, 0 to 255. 
+
+        When used as background color, alpha is considered 255.
      */
-    void setPaletteEntry(int entry, ubyte r, ubyte g, ubyte b, ubyte a) pure
+    void setPaletteEntry(int entry, 
+                         ubyte r, ubyte g, ubyte b, ubyte a) pure
     {
         rgba_t color = rgba_t(r, g, b, a);
         if (_palette[entry] != color)
@@ -321,40 +369,17 @@ nothrow:
                          out ubyte b, 
                          out ubyte a) pure const
     {
-        r = _palette[entry & 15].r;
-        g = _palette[entry & 15].g;
-        b = _palette[entry & 15].b;
-        a = _palette[entry & 15].a;
+        r = _palette[entry].r;
+        g = _palette[entry].g;
+        b = _palette[entry].b;
+        a = _palette[entry].a;
     }
 
-    /**
-        Set foreground color.
-     */
-    void fg(int fg) pure
-    {
-        assert(fg >= 0 && fg < 16);
-        current.fg = cast(ubyte)fg;
-    }
-
-    /**
-        Set background color.
-     */
-    void bg(int bg) pure
-    {
-        assert(bg >= 0 && bg < 16);
-        current.bg = cast(ubyte)bg;
-    }
-
-    /**
-        Set character attributes aka style.
-     */
-    void style(VCStyle s) pure
-    {
-        current.style = s;
-    }
 
     /** 
         Set other options.
+        Those control important rendering options, and changing those
+        tend to redraw the whole buffer.
      */
     void options(VCOptions options)
     {
@@ -362,6 +387,7 @@ nothrow:
 
         // TODO: invalidate right stuff
     }
+
 
     /// ████████╗███████╗██╗  ██╗████████╗
     /// ╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
@@ -372,17 +398,18 @@ nothrow:
 
 
     /**
-        Access char buffer directly.
+        Access character buffer directly.
         Returns: One single character data.
      */
     ref VCCharData charAt(int col, int row) pure return
     {
         return _text[col + row * _columns];
     }
+
     /**
-        Access char buffer directly.
+        Access character buffer directly.
         Returns: Consecutive character data, columns x rows items.
-                 Characters are stores row-major.
+                 Characters are stored in row-major order.
      */
     VCCharData[] characters() pure return
     {
@@ -428,7 +455,8 @@ nothrow:
         {
             VCCharData* cdata = &_text[col + row * _columns];
             cdata.glyph = ch;
-            cdata.color = (current.fg & 0x0f) | ((current.bg & 0x0f) << 4);
+            cdata.color = ( current.fg & 0x0f      ) 
+                        | ((current.bg & 0x0f) << 4);
             cdata.style = current.style;
             _dirtyValidation = true;
         }
@@ -497,10 +525,13 @@ nothrow:
         current.crow = 0;
         _dirtyValidation = true;
     }
+    ///ditto
+    alias clearScreen = cls;
 
     /** 
         Change text cursor position. -1 indicate "keep".
-        Do nothing for each dimension separately, if position is out of bounds.
+        Do nothing for each dimension separately, if position is out
+        of bounds.
     */
     void locate(int x = -1, int y = -1)
     {
@@ -521,8 +552,8 @@ nothrow:
     }
 
     /**
-        Print text to console at current cursor position, encoded in the CCL
-        language (same as in console-colors DUB package).
+        Print text to console at current cursor position, encoded in
+        the CCL language (same as in console-colors DUB package).
         Text input MUST be UTF-8 or Unicode codepoint.
 
         Accepted tags:
@@ -561,18 +592,26 @@ nothrow:
         newline();
     }
 
-    // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗ ██╗███╗   ██╗ ██████╗ 
-    // ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗██║████╗  ██║██╔════╝ 
-    // ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝██║██╔██╗ ██║██║  ███╗
-    // ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗██║██║╚██╗██║██║   ██║
-    // ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║██║██║ ╚████║╚██████╔╝
-    // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+    // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
+    // ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
+    // ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
+    // ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
+    // ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║
+    // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
 
     /**
         Setup output buffer.
         Mandatory call, before being able to call `render`.
+
+        Given buffer must be an image of sRGB 8-bit RGBA quadruplets.
+
+        Params:
+             pixels    Start of output buffer.
     */
-    void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
+    void outbuf(void*     pixels, 
+                int       width, 
+                int       height, 
+                ptrdiff_t pitchBytes)
         @system // memory-safe if pixels in that image addressable
     {
         if (_outPixels != pixels || _outW != width  
@@ -587,25 +626,19 @@ nothrow:
             _dirtyOut = true;
 
             // resize post buffer(s)
-            updatePostBufferSize(width, height);
+            updatePostBuffersSize(width, height);
         }
     }
 
     /**
-        Render console to output buffer.
+        Render console to output buffer. After this call, the output
+        buffer is up-to-date with the changes in text buffer content.
 
-        Depending on the options, only the rectangle in `getUpdateRect()`
-        will get updated.
-
-        Here is the flow of information:
-           _text: CharData (dimension of console, eg: 80x25)
-        => _back: RGBA (console x char size) 
-        => _post, _blur, _emissive: RGBA (out buf size)
-        => outbuf: RGBA
-
+        Depending on the options, only the rectangle in 
+        `getUpdateRect()` will get updated.
     */
     void render() 
-        @system // memory-safe if `outputBuffer()` was called and memory-safe
+        @system // memory-safe if `outbuf()` called and memory-safe
     {
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
@@ -615,7 +648,8 @@ nothrow:
         drawAllChars(textRect);
 
         // from now on, consider _text and _back is up-to-date.
-        // this information of recency is still in textRect and _charDirty.
+        // this information of recency is still in textRect and 
+        // _charDirty.
         _dirtyAllChars = false;
         _cache[] = _text[];
 
@@ -623,15 +657,15 @@ nothrow:
         recomputeLayout();
 
         // 2. Apply scale, character margins, etc.
-        // Take characters in _back and put them in _post, into the final 
-        // resolution.
-        // This ony needs done for _charDirty.
+        // Take characters in _back and put them in _post, into the 
+        // final resolution.
+        // This only needs done for _charDirty chars.
         // Borders are drawn if _dirtyPost is true.
         // _dirtyPost get cleared after that.
         // Return rectangle that changed
         VCRect postRect = backToPost(textRect);
 
-        // A dirty border color can affect out and post buffers redraw
+        // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
 
         // 3. Effect go here. Blur, screen simulation, etc.
@@ -645,11 +679,11 @@ nothrow:
     // <dirty rectangles> 
 
     /**
-        Return if there are pending updates to draw, to reflect changes
-        in text buffer content, colors, style or font used.
+        Return if there is pending updates to draw.
         
-        This answer is not valid if you use printing or styling functions
-        before calling `render()`.
+        This answer is only valid until the next `render()` call.
+        Also invalidated if you print, change style, palette, or
+        options, etc.
      */
     bool hasPendingUpdate()
     {
@@ -658,19 +692,18 @@ nothrow:
     }
 
     /**
-        (Optional call)
+        Returns the outbuf rectangle which is going to be updated
+        when `render()` is called.
 
-        Returns the rectangle (in pixels coordinates of the output buffer)
-        which is going to be updated next if `render()` was called.
-        This is useful to trigger a partial redraw.
+        This is expressed in output buffer coordinates.
 
-        In case of nothing to redraw, it's width and height will be zero.
-        You may also call `hasPendingUpdate()`.
+        This answer is only valid until the next `render()` call.
+        Also invalidated if you print, change style, palette, or
+        options, etc.
 
-        This rectangle is not valid if you use printing or styling functions
-        before calling `render()`, change console size, change output buffer,
-        change font, etc.
-     */
+        Note: In case of nothing to redraw, it's width and height 
+              will be zero. Better use `hasPendingUpdate()`.
+    */
     VCRect getUpdateRect()
     {
         if (_dirtyOut || (!_options.allowOutCaching) )
@@ -712,8 +745,8 @@ private:
     VCOptions _options = VCOptions.init;
 
     VCCharData[] _text  = null; // text buffer
-    VCCharData[] _cache = null; // cached text buffer, if different then dirty
-    bool[] _charDirty = null; // true if character need to redraw in _back
+    VCCharData[] _cache = null; // same but cached
+    bool[] _charDirty = null; // true if char need redraw in _back
 
     // Palette
     rgba_t[16] _palette = 
@@ -728,14 +761,13 @@ private:
         rgba_t(  0, 255, 255, 255), rgba_t(255, 255, 255, 255),
     ];
 
-    bool _dirtyAllChars   = true; // all chars need redraw (font change typically)
+    bool _dirtyAllChars   = true; // all chars need redraw
     bool _dirtyValidation = true; // if _charDirty already computed
-
-    bool _dirtyPost   = true; // if out-sized buffers must be redrawn entirely
-    bool _dirtyOut   = true; // if out-sized buffers must be redrawn entirely
+    bool _dirtyPost       = true;
+    bool _dirtyOut        = true;
 
     bool[16] _paletteDirty; // true if this color changed
-    VCRect _lastBounds; // last computed dirty rectangle
+    VCRect   _lastBounds; // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
     // In this buffer, every character is rendered next to each other.
@@ -743,9 +775,9 @@ private:
     int _backHeight = -1;
     rgba_t[] _back  = null;
 
-    // A buffer for effects, same size as out buffer (including borders)
-    // in this buffer, scale is applied, margins, and character margins
-    // So its content depends upon outbuffer size.
+    // A buffer for effects, same size as outbuf (including borders)
+    // In _post/_blur/_emit/_emitH buffers, scale is applied and also 
+    // borders.
     int _postWidth  = -1;
     int _postHeight = -1;
     rgba_t[] _post  = null; 
@@ -756,12 +788,12 @@ private:
     // if true, whole blur must be redone
     bool _dirtyBlur = false;
     int _filterWidth; // filter width of gaussian blur, in pixels
-    float[MAX_FILTER_WIDTH] _gaussianKernel;
-    enum MAX_FILTER_WIDTH = 63; // presumably this is too slow beyond that
+    float[MAX_FILTER_WIDTH] _blurKernel;
+    enum MAX_FILTER_WIDTH = 63; // presumably this is slow beyond that
 
-    // Note: those two buffers are fake-linear, premul alpha, unsigned 16-bit
+    // Note: those two buffers are fake-linear, premul alpha, u16
     rgba16_t[] _emit  = null;  // emissive color
-    rgba16_t[] _emitH  = null; // emissive color, horz-blurred, transposed
+    rgba16_t[] _emitH  = null; // emissive color, horz-blur (TODO)transposed
 
     static struct State
     {
@@ -810,40 +842,43 @@ private:
     // Invalidate out and post buffer if that changed.
     void recomputeLayout()
     {
-        int cw = charWidth();
-        int ch = charHeight();
-        int columns = _columns;
-        int rows = _rows;
-        int outW = _outW;
-        int outH = _outH;
-        int scaleX = _outW / (_columns * cw);
-        int scaleY = _outH / (_rows    * ch);
-        if (scaleX < 1) scaleX = 1;
-        if (scaleY < 1) scaleY = 1;
+        int charW = charWidth();
+        int charH = charHeight();
+
+        // Find scale to multiply size of character by whole amount.
+        // eg: scale == 2 => each font pixel becomes 2x2 pixel block.
+        int scaleX = _outW / (_columns * charW);
+        if (scaleX < 1) 
+            scaleX = 1;
+        int scaleY = _outH / (_rows    * charH);
+        if (scaleY < 1) 
+            scaleY = 1;
         int scale = (scaleX < scaleY) ? scaleX : scaleY;
-        int remainX = outW - (columns * cw) * scale;
-        int remainY = outH - (rows    * ch) * scale;
-        assert(remainX <= outW);
-        assert(remainY <= outH);
-        if (remainX < 0) remainX = 0;
-        if (remainY < 0) remainY = 0;
+
+        // Compute remainder pixels in outbuf
+        int remX = _outW - (_columns * charW) * scale;
+        int remY = _outH - (_rows    * charH) * scale;
+        assert(remX <= _outW && remY <= _outH);
+        if (remX < 0) 
+            remX = 0;
+        if (remY < 0) 
+            remY = 0;
 
         int marginLeft;
         int marginTop;
-        final switch(_options.halign)
+        final switch(_options.halign) with (VCHorzAlign)
         {
-            case VCHorzAlign.left:    marginLeft = 0; break;
-            case VCHorzAlign.center:  marginLeft = (remainX+1)/2; break;
-            case VCHorzAlign.right:   marginLeft = remainX; break;
+            case left:    marginLeft = 0;      break;
+            case center:  marginLeft = remX/2; break;
+            case right:   marginLeft = remX;   break;
         }
 
-        final switch(_options.valign)
+        final switch(_options.valign) with (VCVertAlign)
         {
-            case VCVertAlign.top:     marginTop = 0; break;
-            case VCVertAlign.middle:  marginTop = remainY/2; break;
-            case VCVertAlign.bottom:  marginTop = remainY; break;
+            case top:     marginTop  = 0;      break;
+            case middle:  marginTop  = remY/2; break;
+            case bottom:  marginTop  = remY;   break;
         }
-
 
         int charMarginX = 0; // not implemented
         int charMarginY = 0; // not implemented
@@ -864,7 +899,8 @@ private:
             _outScaleX = scale;
             _outScaleY = scale;
 
-            updateFilterSize(scale * cw * 2); // FUTURE: tune in order to maximize beauty
+            float filterSize = charW * scale * _options.blurScale;
+            updateFilterSize( cast(int)(0.5f + filterSize) ); 
         }
     }
 
@@ -912,10 +948,12 @@ private:
         {
             int cells = columns * rows;
             size_t bytes = cells * VCCharData.sizeof;
-            void* p = realloc_c17(_text.ptr, bytes * 2);
-            _text = (cast(VCCharData*)p)[0..cells];
-            _cache = (cast(VCCharData*)p)[cells..2*cells];
-            _charDirty = (cast(bool*) realloc_c17(_charDirty.ptr, cells * bool.sizeof))[0..cells];
+            void* alloc = realloc_c17(_text.ptr, bytes * 2);
+            _text  = (cast(VCCharData*)alloc)[    0..  cells];
+            _cache = (cast(VCCharData*)alloc)[cells..2*cells];
+
+            alloc = realloc_c17(_charDirty.ptr, cells * bool.sizeof);
+            _charDirty = (cast(bool*)alloc)[0..cells];            
             _columns = columns;
             _rows    = rows;
             _dirtyAllChars = true;
@@ -925,8 +963,8 @@ private:
 
     void updateBackBufferSize() @trusted
     {
-        int width  = columns * charWidth;
-        int height = rows    * charHeight;
+        int width  = columns * charWidth();
+        int height = rows    * charHeight();
         if (width != _backWidth || height != _backHeight)
         {
             _dirtyAllChars = true;
@@ -939,7 +977,7 @@ private:
         }
     }
 
-    void updatePostBufferSize(int width, int height) @trusted
+    void updatePostBuffersSize(int width, int height) @trusted
     {
         if (width != _postWidth || height != _postHeight)
         {
@@ -972,7 +1010,7 @@ private:
 
             double sigma = (filterSize - 1) / 6.0;
             double mu = 0.0;
-            makeGaussianKernel(filterSize, sigma, mu, _gaussianKernel[]);
+            makeGaussianKernel(filterSize, sigma, mu, _blurKernel[]);
             _dirtyBlur = true;
         }
     }
@@ -990,6 +1028,7 @@ private:
         // the validation results itself might not need to be recomputed
         if (!_dirtyValidation)
             return _lastBounds;
+
         _dirtyValidation = false;
 
         VCRect bounds;
@@ -1043,17 +1082,10 @@ private:
     }
 
     // Draw all chars from _text to _back, no caching yet
-    void drawAllChars(VCRect textRect)
-    {
-        for (int row = textRect.y1; row < textRect.y2; ++row)
-        {
-            for (int col = textRect.x1; col < textRect.x2; ++col)
-            {
-                if (_charDirty[col + _columns * row])
-                    drawChar(col, row);
-            }
-        }
-    }
+    void drawAllChars(VCRect textRect){ for (int row = textRect.y1; row <
+    textRect.y2; ++row){ for (int col = textRect.x1; col <
+    textRect.x2; ++col){ if (_charDirty[col + _columns * row]) drawChar
+    (col, row); } } }
 
     // Draw from _back to _post
     // Returns changed rect, in pixels
@@ -1244,14 +1276,14 @@ private:
                 if (x >= _postWidth) continue;
 
                 float r = 0, g = 0, b = 0;
-                float[] kernel = _gaussianKernel;
+                float[] kernel = _blurKernel;
                 for (int n = -fWidthDiv2; n <= fWidthDiv2; ++n)
                 {
                     int xe = x + n;
                     if (xe < 0) continue;
                     if (xe >= _postWidth) continue;
                     rgba16_t emissive = emissiveScan[xe];
-                    float factor = _gaussianKernel[fWidthDiv2 + n];
+                    float factor = _blurKernel[fWidthDiv2 + n];
                     r += emissive.r * factor;
                     g += emissive.g * factor;
                     b += emissive.b * factor;
@@ -1262,8 +1294,8 @@ private:
             }
         }
 
-        // Note: updateRect is now extended horizontally by fWidthDiv2 on each
-        // sides, since the update rect of _emissiveH is larger.
+        // Note: updateRect is now extended horizontally by fWidthDiv2 
+        // on each sides, since update rect of _emissiveH is larger.
 
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
@@ -1271,10 +1303,13 @@ private:
             const(rgba_t)* postScan = &_post[_postWidth * y];
             rgba_t*        blurScan = &_blur[_postWidth * y];
 
-            for (int x = updateRect.x1 - fWidthDiv2; x < updateRect.x2 + fWidthDiv2; ++x)
+            for (int x = updateRect.x1 - fWidthDiv2; 
+                     x < updateRect.x2 + fWidthDiv2; ++x)
             {
                 // blur vertically
-                float r = 0, g = 0, b = 0;
+                float blurR = 0, 
+                      blurG = 0, 
+                      blurB = 0;
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
 
@@ -1284,13 +1319,13 @@ private:
                     if (ye < 0) continue;
                     if (ye >= _postHeight) continue;
                     rgba16_t emitH = _emitH[_postWidth * ye + x];
-                    float factor = _gaussianKernel[fWidthDiv2 + n];
-                    r += emitH.r * factor;
-                    g += emitH.g * factor;
-                    b += emitH.b * factor;
+                    float factor = _blurKernel[fWidthDiv2 + n];
+                    blurR += emitH.r * factor;
+                    blurG += emitH.g * factor;
+                    blurB += emitH.b * factor;
                 }
 
-                static ubyte clamp_0_255(float t)
+                static ubyte clamp_0_255(float t) pure
                 {
                     int u = cast(int)t;
                     if (u > 255) u = 255;
@@ -1298,13 +1333,40 @@ private:
                     return cast(ubyte)u;
                 }
 
-                // TODO tune
-                enum float BLUR_AMOUNT = 1.05 / 255.0f;//0.01;//.52892;
+                static VCmax32f(float a, float b) pure
+                {
+                    return a < b ? a : b;
+                }
 
+                float BLUR_AMOUNT = _options.blurAmount / 255.0f;
+
+                // Add blur
                 rgba_t post = postScan[x];
-                post.r = clamp_0_255(post.r + r * BLUR_AMOUNT);
-                post.g = clamp_0_255(post.g + g * BLUR_AMOUNT);
-                post.b = clamp_0_255(post.b + b * BLUR_AMOUNT);
+                float R = post.r + blurR * BLUR_AMOUNT;
+                float G = post.g + blurG * BLUR_AMOUNT;
+                float B = post.b + blurB * BLUR_AMOUNT;
+
+                if (_options.tonemapping)
+                {
+                    // Same tonemapping as default one in Dplug.
+                    float tmThre  = 255.0f;
+                    float tmRatio = 0.3f; 
+                    float excessR = VCmax32f(0.0f, R - tmThre);
+                    float excessG = VCmax32f(0.0f, G - tmThre);
+                    float excessB = VCmax32f(0.0f, B - tmThre);
+                    float exceedLuma = 0.212655f * excessR 
+                                     + 0.715158f * excessG
+                                     + 0.072187f * excessB;
+
+                    // Add excess energy in all channels
+                    R += exceedLuma * tmRatio;
+                    G += exceedLuma * tmRatio;
+                    B += exceedLuma * tmRatio;
+                }
+                
+                post.r = clamp_0_255(R);
+                post.g = clamp_0_255(G);
+                post.b = clamp_0_255(B);
                 blurScan[x] = post;
             }
         }
@@ -1337,32 +1399,31 @@ void* realloc_c17(void* p, size_t size) @system
 rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
 {
     ubyte invAlpha = cast(ubyte)(~cast(int)alpha);
-    rgba_t c = void;
-    c.r = cast(ubyte) ( ( (fg.r * alpha) + (bg.r * invAlpha)  ) / ubyte.max );
-    c.g = cast(ubyte) ( ( (fg.g * alpha) + (bg.g * invAlpha)  ) / ubyte.max );
-    c.b = cast(ubyte) ( ( (fg.b * alpha) + (bg.b * invAlpha)  ) / ubyte.max );
-    c.a = cast(ubyte) ( ( (fg.a * alpha) + (bg.a * invAlpha)  ) / ubyte.max );
+    rgba_t c;
+    c.r = cast(ubyte) ( ( fg.r * alpha + bg.r * invAlpha ) / 255 );
+    c.g = cast(ubyte) ( ( fg.g * alpha + bg.g * invAlpha ) / 255 );
+    c.b = cast(ubyte) ( ( fg.b * alpha + bg.b * invAlpha ) / 255 );
+    c.a = cast(ubyte) ( ( fg.a * alpha + bg.a * invAlpha ) / 255 );
     return c;
 }
-
 
 
 static immutable uint[16][VCPalette.max+1] PALETTE_DATA =
 [
     // Vintaage
-    [ 0x000000, 0x800000, 0x008000, 0x808000, 
-      0x000080, 0x800080, 0x008080, 0xc0c0c0,        
+    [ 0x000000, 0x800000, 0x008000, 0x808000,
+      0x000080, 0x800080, 0x008080, 0xc0c0c0,
       0x808080, 0xff0000, 0x00ff00, 0xffff00,
-      0x0000ff, 0xff00ff, 0x00ffff, 0xffffff ],      
+      0x0000ff, 0xff00ff, 0x00ffff, 0xffffff ],
 
     // Campbell
-    [ 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 
+    [ 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00,
       0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
       0x767676, 0xe74856, 0x16c60c, 0xf9f1a5,
       0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2 ],
 
     // OneHalfLight
-    [ 0x383a42, 0xe45649, 0x50a14f, 0xc18301, 
+    [ 0x383a42, 0xe45649, 0x50a14f, 0xc18301,
       0x0184bc, 0xa626a4, 0x0997b3, 0xfafafa,
       0x4f525d, 0xdf6c75, 0x98c379, 0xe4c07a,
       0x61afef, 0xc577dd, 0x56b5c1, 0xffffff ],
@@ -1427,17 +1488,18 @@ const(ubyte)[] getGlyphData(VCFont font, dchar glyph) pure
 static immutable VCFontDesc[VCFont.max + 1] BUILTIN_FONTS =
 [
     VCFontDesc([8, 8], 
-        [ 
-            VCUnicodeRange(0x0000, 0x0020, CONTROL_CHARS, VCSingleGlyph),
-            VCUnicodeRange(0x0020, 0x0080, LOWER_ANSI)
-        ])
+    [ 
+        VCUnicodeRange(0x0000, 0x0020, CONTROL_CHARS, VCSingleGlyph),
+        VCUnicodeRange(0x0020, 0x0080, LOWER_ANSI)
+    ])
 ];
 
 
-// Note: not sure what font it is, I dumped that from BIOS memory years ago
+// Note: not sure what font it is, dumped from BIOS memory years ago
 static immutable ubyte[8] CONTROL_CHARS =
 [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Note: all control chars have that same glyph
+    // All control chars have that same empty glyph
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 ];
     
 static immutable ubyte[8] NOT_DEF =
@@ -2128,7 +2190,7 @@ private:
 void makeGaussianKernel(int len, 
                         float sigma, 
                         float mu, 
-                        float[] outtaps)
+                        float[] outtaps) pure
 {
     assert( (len % 2) == 1);
     assert(len <= outtaps.length);
@@ -2163,10 +2225,11 @@ double erf(double x) pure
     double a3 = 1.421413741;
     double a4 = -1.453152027;
     double a5 = 1.061405429;
-    double p = 0.3275911;
+    double p  = 0.3275911;
     // A&S formula 7.1.26
     double t = 1.0 / (1.0 + p * abs(x));
-    double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp(-x * x);
+    double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1)
+                     * t * exp(-x * x);
     return (x >= 0 ? 1 : -1) * y;
 }
 
