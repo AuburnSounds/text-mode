@@ -1281,7 +1281,6 @@ private:
     void drawChar(int col, int row) @trusted
     {
         TM_CharData cdata = charAt(col, row);
-
         int cw = charWidth();
         int ch = charHeight();
         ubyte fgi = cdata.color & 15;
@@ -1290,11 +1289,18 @@ private:
         rgba_t bgCol = _palette[ cdata.color >>> 4 ];
         const(ubyte)[] glyphData = getGlyphData(_font, cdata.glyph);
         assert(glyphData.length == 8);
-
+        bool bold      = (cdata.style & TM_bold) != 0;
+        bool underline = (cdata.style & TM_underline) != 0;
         for (int y = 0; y < ch; ++y)
         {
             const int yback = row * ch + y;
-            const int bits  = glyphData[y];
+            int bits  = glyphData[y];
+
+            if ( (y == ch - 1) && underline)
+                bits = 0xff;
+
+            if (bold)
+                bits |= (bits >> 1);
 
             int idx = (_columns * cw) * yback + (col * cw);
             rgba_t* pixels = &_back[idx];
