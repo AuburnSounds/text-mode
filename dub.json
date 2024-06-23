@@ -1,5 +1,5 @@
 {
-	"name": "vintage-console",
+	"name": "text-mode",
     "license": "BSL-1.0",
-    "description": "Virtual text mode, for use in GUI programs or fantasy consoles"
+    "description": "Virtual text mode with 8x8 Unicode font. For use in UI programs or fantasy consoles."
 }

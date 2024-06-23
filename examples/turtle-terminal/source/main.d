@@ -1,5 +1,5 @@
 import turtle;
-import vintageconsole;
+import textmode;
 
 int main(string[] args)
 {
@@ -11,19 +11,13 @@ class TermExample : TurtleGame
 {
     this()
     {
-        console.size(40, 21);
 
-        VCOptions options;
-        options.allowOutCaching = true; // doable because background color is set to transparent
-        options.borderColor = 0;
-        options.borderShiny = false;
-        console.options(options);
-        console.palette(VCPalette.campbell);
     }
 
     override void load()
     {
         setBackgroundColor(color("rgba(0, 0, 0, 0%)"));
+        console.size(40, 21);
     }
 
     override void mouseMoved(float x, float y, float dx, float dy)
@@ -70,7 +64,6 @@ class TermExample : TurtleGame
                 int ch = (cast(int) randNormal(0, 1000)) & 255;   
                // if (ch < 10)
                 {
-                    style(VCshiny);
                     locate(col, row);
                     //print(cast(char)ch);
                     cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
@@ -86,11 +79,18 @@ class TermExample : TurtleGame
 
         with (console)
         {
+            TM_Options options;
+            options.allowOutCaching = true; // doable because background color is set to transparent
+            options.borderColor = 0;
+            options.borderShiny = false;
+            console.options(options);
+            console.palette(TM_Palette.campbell);
+
             console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
             render();
         }
     } 
 
-    VCConsole console;
+    TM_Console console;
 }
 

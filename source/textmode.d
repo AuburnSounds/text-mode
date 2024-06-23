@@ -25,7 +25,7 @@ nothrow:
     The next 4-bit are background color in a 16 color palette.
     Each glyph is rendered fully opaque, in those two colors.
 */
-static struct VCCharData
+static struct TM_CharData
 {
     /// Unicode codepoint to represent. This library doesn't 
     /// compose codepoints.
@@ -35,24 +35,24 @@ static struct VCCharData
     /// High nibble = background color (0 to 15)
     ubyte color     = 8;  
 
-    /// Style of that character, a combination of VCStyle flags.
-    VCStyle style; 
+    /// Style of that character, a combination of TM_Style flags.
+    TM_Style style; 
 }
 
 /** 
     Character styles.
  */
-alias VCStyle = ubyte;
+alias TM_Style = ubyte;
 
-enum : VCStyle
+enum : TM_Style
 {
-    VCnone      = 0, /// no style
-    VCshiny     = 1, /// <shiny>, emissive light
+    TM_none      = 0, /// no style
+    TM_shiny     = 1, /// <shiny>, emissive light
 
     // NOT IMPLEMENTED YET:
-    VCbold      = 2, /// <b> or <strong>, not implemented
-    VCunderline = 4, /// <u>, not implemented
-    VCblink     = 8, /// <blink>, not implemented
+    TM_bold      = 2, /// <b> or <strong>, not implemented
+    TM_underline = 4, /// <u>, not implemented
+    TM_blink     = 8, /// <blink>, not implemented
 }
 
 /**
@@ -60,7 +60,7 @@ enum : VCStyle
     You can either load a predefined palette, or change colors 
     individually.
  */
-enum VCPalette
+enum TM_Palette
 {
     vintage,      ///
     campbell,     ///
@@ -74,7 +74,7 @@ enum VCPalette
     - text space (0,0)-(columns x rows)
     - post/blur/output space (0,0)-(outW x outH)
 */
-struct VCRect
+struct TM_Rect
 {
 
 nothrow:
@@ -96,14 +96,14 @@ pure:
 /// There is only one font, our goal it provide a Unicode 8x8 
 /// font suitable for most languages, so others were removed. 
 /// A text mode with `dchar` as input.
-enum VCFont
+enum TM_Font
 {
     // 8x8 fonts
     pcega, /// A font dumped from BIOS around 2003, then extended.
 }
 
 /// How to blend on output buffer?
-enum VCBlendMode
+enum TM_BlendMode
 {
     /// Blend console content to output, using alpha.
     sourceOver,
@@ -114,7 +114,7 @@ enum VCBlendMode
 
 /// How to align vertically the console in output buffer.
 /// Default: center.
-enum VCHorzAlign
+enum TM_HorzAlign
 {
     left,
     center,
@@ -123,7 +123,7 @@ enum VCHorzAlign
 
 /// How to align vertically the console in output buffer.
 /// Default: middle.
-enum VCVertAlign
+enum TM_VertAlign
 {
     top,
     middle,
@@ -131,11 +131,11 @@ enum VCVertAlign
 }
 
 /// Various options to change behaviour of the library.
-struct VCOptions
+struct TM_Options
 {
-    VCBlendMode blendMode = VCBlendMode.copy; ///
-    VCHorzAlign halign    = VCHorzAlign.center; ///
-    VCVertAlign valign    = VCVertAlign.middle; ///
+    TM_BlendMode blendMode = TM_BlendMode.copy; ///
+    TM_HorzAlign halign    = TM_HorzAlign.center; ///
+    TM_VertAlign valign    = TM_VertAlign.middle; ///
 
     /// The output buffer is considered unchanged between calls.
     /// It is considered our changes are still there and not erased,
@@ -149,7 +149,7 @@ struct VCOptions
     /// Is the border color itself <shiny>?
     bool borderShiny      = false;
 
-    /// Quantity of blur added by VCshiny / <shiny>
+    /// Quantity of blur added by TM_shiny / <shiny>
     float blurAmount      = 1.0f;
 
     /// Kernel size in multiple of default value.
@@ -177,12 +177,12 @@ struct VCOptions
 /** 
     Main API of the vintage-console library.
 
-    Note: none of the `VCConsole` functions are thread-safe. Either 
+    Note: none of the `TM_Console` functions are thread-safe. Either 
           call them single-threaded, or synchronize externally.
           None of them can be called concurrently, unless it's 
-          different `VCConsole` objects.
+          different `TM_Console` objects.
 */
-struct VCConsole
+struct TM_Console
 {
 public:
 nothrow:
@@ -269,7 +269,7 @@ nothrow:
     /**
         Set current character attributes aka style.
      */
-    void style(VCStyle s) pure
+    void style(TM_Style s) pure
     {
         current.style = s;
     }
@@ -307,7 +307,7 @@ nothrow:
         Set/get font selection.
         But well, there is only one font.
      */
-    void font(VCFont font)
+    void font(TM_Font font)
     {
         if (_font != font)
         {
@@ -318,7 +318,7 @@ nothrow:
         updateBackBufferSize(); // if internal size changed
     }
     ///ditto
-    VCFont font() pure const
+    TM_Font font() pure const
     { 
         return _font; 
     }
@@ -341,7 +341,7 @@ nothrow:
     /**
         Load a palette preset.
     */
-    void palette(VCPalette palette)
+    void palette(TM_Palette palette)
     {
         for (int entry = 0; entry < 16; ++entry)
         {
@@ -395,11 +395,31 @@ nothrow:
         Those control important rendering options, and changing those
         tend to redraw the whole buffer.
      */
-    void options(VCOptions options)
+    void options(TM_Options options)
     {
-        _options = options;
+        if (_options.blendMode != options.blendMode)
+            _dirtyOut = true;
 
-        // TODO: invalidate right stuff
+        // A few of those are overreacting.
+        // for example, changing blur amount or tonemapping
+        // may not redo the blur convolution.
+        if (_options.halign != options.halign
+         || _options.valign != options.valign
+         || _options.borderColor != options.borderColor
+         || _options.borderShiny != options.borderShiny
+         || _options.blurAmount != options.blurAmount
+         || _options.blurScale != options.blurScale
+         || _options.blurForeground != options.blurForeground
+         || _options.blurBackground != options.blurBackground
+         || _options.tonemapping != options.tonemapping
+         || _options.tonemappingRatio != options.tonemappingRatio
+         || _options.noiseTexture != options.noiseTexture
+         || _options.noiseAmount != options.noiseAmount)
+        {
+            _dirtyPost = true;
+            _dirtyOut = true;
+        }
+        _options = options;
     }
 
 
@@ -415,7 +435,7 @@ nothrow:
         Access character buffer directly.
         Returns: One single character data.
      */
-    ref VCCharData charAt(int col, int row) pure return
+    ref TM_CharData charAt(int col, int row) pure return
     {
         return _text[col + row * _columns];
     }
@@ -425,7 +445,7 @@ nothrow:
         Returns: Consecutive character data, columns x rows items.
                  Characters are stored in row-major order.
      */
-    VCCharData[] characters() pure return
+    TM_CharData[] characters() pure return
     {
         return _text;
     }
@@ -467,7 +487,7 @@ nothrow:
 
         if (validPosition(col, row))
         {
-            VCCharData* cdata = &_text[col + row * _columns];
+            TM_CharData* cdata = &_text[col + row * _columns];
             cdata.glyph = ch;
             cdata.color = ( current.fg & 0x0f      ) 
                         | ((current.bg & 0x0f) << 4);
@@ -521,7 +541,7 @@ nothrow:
 
             for (int col = 0; col < _columns; ++col)
             {
-                charAt(col, _rows-1) = VCCharData.init;
+                charAt(col, _rows-1) = TM_CharData.init;
             }
 
             current.crow -= 1;
@@ -534,7 +554,7 @@ nothrow:
     void cls() pure
     {
         // Set all char data to grey space
-        _text[] = VCCharData.init;
+        _text[] = TM_CharData.init;
         current.ccol = 0;
         current.crow = 0;
         _dirtyValidation = true;
@@ -656,7 +676,7 @@ nothrow:
     {
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
-        VCRect textRect = invalidateChars();
+        TM_Rect textRect = invalidateChars();
 
         // 1. Draw chars in original size, only those who changed.
         drawAllChars(textRect);
@@ -677,7 +697,7 @@ nothrow:
         // Borders are drawn if _dirtyPost is true.
         // _dirtyPost get cleared after that.
         // Return rectangle that changed
-        VCRect postRect = backToPost(textRect);
+        TM_Rect postRect = backToPost(textRect);
 
         // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
@@ -701,7 +721,7 @@ nothrow:
      */
     bool hasPendingUpdate()
     {
-        VCRect r = getUpdateRect();
+        TM_Rect r = getUpdateRect();
         return (r.x2 - r.x1) != 0 && (r.y2 - r.y1) != 0;
     }
 
@@ -718,21 +738,21 @@ nothrow:
         Note: In case of nothing to redraw, it's width and height 
               will be zero. Better use `hasPendingUpdate()`.
     */
-    VCRect getUpdateRect()
+    TM_Rect getUpdateRect()
     {
         if (_dirtyOut || (!_options.allowOutCaching) )
         {
-            return VCRect(0, 0, _outW, _outH);
+            return TM_Rect(0, 0, _outW, _outH);
         }
 
-        VCRect textRect = invalidateChars();
+        TM_Rect textRect = invalidateChars();
 
         if (textRect.isEmpty)
-            return VCRect(0, 0, 0, 0);
+            return TM_Rect(0, 0, 0, 0);
 
         recomputeLayout();
 
-        VCRect r = transformRectToOutputCoord(textRect);
+        TM_Rect r = transformRectToOutputCoord(textRect);
 
         // extend it to account for blur
         return extendByFilterWidth(r);
@@ -752,14 +772,14 @@ nothrow:
 private:
 
     // By default, EGA text mode, correspond to a 320x200.
-    VCFont _font    = VCFont.pcega;
-    int _columns    = -1;
-    int _rows       = -1;
+    TM_Font _font = TM_Font.pcega;
+    int _columns  = -1;
+    int _rows     = -1;
 
-    VCOptions _options = VCOptions.init;
+    TM_Options _options = TM_Options.init;
 
-    VCCharData[] _text  = null; // text buffer
-    VCCharData[] _cache = null; // same but cached
+    TM_CharData[] _text  = null; // text buffer
+    TM_CharData[] _cache = null; // same but cached
     bool[] _charDirty = null; // true if char need redraw in _back
 
     // Palette
@@ -781,7 +801,7 @@ private:
     bool _dirtyOut        = true;
 
     bool[16] _paletteDirty; // true if this color changed
-    VCRect   _lastBounds; // last computed dirty rectangle
+    TM_Rect  _lastBounds;   // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
     // In _back and _backFlags buffer, every character is rendered 
@@ -817,11 +837,11 @@ private:
 
     static struct State
     {
-        ubyte bg      = 0;
-        ubyte fg      = 8;
-        int ccol      = 0; // curor col  (X position)
-        int crow      = 0; // cursor row (Y position)
-        VCStyle style = 0;
+        ubyte bg       = 0;
+        ubyte fg       = 8;
+        int ccol       = 0; // cursor col  (X position)
+        int crow       = 0; // cursor row (Y position)
+        TM_Style style = 0;
 
         // for the CCL interpreter
         int inputPos; // position of the opening tag in input chars.
@@ -885,14 +905,14 @@ private:
 
         int marginLeft;
         int marginTop;
-        final switch(_options.halign) with (VCHorzAlign)
+        final switch(_options.halign) with (TM_HorzAlign)
         {
             case left:    marginLeft = 0;      break;
             case center:  marginLeft = remX/2; break;
             case right:   marginLeft = remX;   break;
         }
 
-        final switch(_options.valign) with (VCVertAlign)
+        final switch(_options.valign) with (TM_VertAlign)
         {
             case top:     marginTop  = 0;      break;
             case middle:  marginTop  = remY/2; break;
@@ -925,7 +945,7 @@ private:
 
     // r is in text console coordinates
     // transform it in pixel coordinates
-    VCRect transformRectToOutputCoord(VCRect r)
+    TM_Rect transformRectToOutputCoord(TM_Rect r)
     {
         if (r.isEmpty)
             return r;
@@ -944,7 +964,7 @@ private:
 
     // extend rect in output coordinates, by filter radius
 
-    VCRect extendByFilterWidth(VCRect r)
+    TM_Rect extendByFilterWidth(TM_Rect r)
     {
         int filter_2 = _filterWidth / 2;
         r.x1 -= filter_2;
@@ -966,10 +986,10 @@ private:
         if (_columns != columns || _rows != rows)
         {
             int cells = columns * rows;
-            size_t bytes = cells * VCCharData.sizeof;
+            size_t bytes = cells * TM_CharData.sizeof;
             void* alloc = realloc_c17(_text.ptr, bytes * 2);
-            _text  = (cast(VCCharData*)alloc)[    0..  cells];
-            _cache = (cast(VCCharData*)alloc)[cells..2*cells];
+            _text  = (cast(TM_CharData*)alloc)[    0..  cells];
+            _cache = (cast(TM_CharData*)alloc)[cells..2*cells];
 
             alloc = realloc_c17(_charDirty.ptr, cells * bool.sizeof);
             _charDirty = (cast(bool*)alloc)[0..cells];            
@@ -977,7 +997,7 @@ private:
             _rows    = rows;
             _dirtyAllChars = true;
         }
-        _text[] = VCCharData.init;
+        _text[] = TM_CharData.init;
     }
 
     void updateBackBufferSize() @trusted
@@ -1041,7 +1061,7 @@ private:
     //  - size changed
     //
     // Returns: A rectangle that needs to change, in text coordinates.
-    VCRect invalidateChars()
+    TM_Rect invalidateChars()
     {
         // validation results might not need to be recomputed
         if (!_dirtyValidation)
@@ -1049,7 +1069,7 @@ private:
 
         _dirtyValidation = false;
 
-        VCRect bounds;
+        TM_Rect bounds;
         bounds.x1 = _columns+1;
         bounds.y1 = _rows+1;
         bounds.x2 = -1;
@@ -1070,8 +1090,8 @@ private:
                 for (int col = 0; col < _columns; ++col)
                 {
                     int icell = col + row * _columns;
-                    VCCharData text  =  _text[icell];
-                    VCCharData cache =  _cache[icell];
+                    TM_CharData text  =  _text[icell];
+                    TM_CharData cache =  _cache[icell];
                     bool redraw = false;
                     if (text != cache)
                         redraw = true; // chardata changed
@@ -1092,7 +1112,7 @@ private:
             // make rect empty if nothing found
             if (bounds.x2 == -1)
             {
-                bounds = VCRect(0, 0, 0, 0);
+                bounds = TM_Rect(0, 0, 0, 0);
             }
         }
         _lastBounds = bounds;
@@ -1100,7 +1120,7 @@ private:
     }
 
     // Draw all chars from _text to _back, no caching yet
-    void drawAllChars(VCRect textRect)
+    void drawAllChars(TM_Rect textRect)
     { 
         for (int row = textRect.y1; row < textRect.y2; ++row)
         { 
@@ -1114,11 +1134,11 @@ private:
 
     // Draw from _back/_backFlags to _post/_emit
     // Returns changed rect, in pixels
-    VCRect backToPost(VCRect textRect) @trusted
+    TM_Rect backToPost(TM_Rect textRect) @trusted
     {
         bool drawBorder = false;
 
-        VCRect postRect = transformRectToPostCoord(textRect);
+        TM_Rect postRect = transformRectToPostCoord(textRect);
 
         if (_dirtyPost)
         {
@@ -1140,8 +1160,8 @@ private:
             else
                 _emit[] = rgba16_t(0, 0, 0, 0);
 
-            postRect = VCRect(0, 0, _postWidth, _postHeight);
-            textRect = VCRect(0, 0, _columns, _rows);
+            postRect = TM_Rect(0, 0, _postWidth, _postHeight);
+            textRect = TM_Rect(0, 0, _columns, _rows);
         }
 
         // Which chars to copy, with scale and margins applied?
@@ -1153,7 +1173,7 @@ private:
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
                     continue; // char didn't change
 
-                bool shiny = (_text[charIndex].style & VCshiny) != 0;
+                bool shiny = (_text[charIndex].style & TM_shiny) != 0;
                 copyCharBackToPost(col, row, shiny);
             }
         }
@@ -1216,9 +1236,9 @@ private:
     }
 
     // Draw from _post to _out
-    void postToOut(VCRect textRect) @trusted
+    void postToOut(TM_Rect textRect) @trusted
     {
-        VCRect changeRect = transformRectToOutputCoord(textRect);
+        TM_Rect changeRect = transformRectToOutputCoord(textRect);
 
         // Extend it to account for blur
         changeRect = extendByFilterWidth(changeRect);
@@ -1227,7 +1247,7 @@ private:
         {
             // No caching-case, redraw everything we now from _post.
             // The buffer content wasn't preserved, so we do it again.
-            changeRect = VCRect(0, 0, _outW, _outH); 
+            changeRect = TM_Rect(0, 0, _outW, _outH); 
         }
 
         for (int y = changeRect.y1; y < changeRect.y2; ++y)
@@ -1241,7 +1261,7 @@ private:
                 // Read one pixel, make potentially several in output
                 // with nearest resampling
                 rgba_t fg = postScan[x];
-                final switch (_options.blendMode) with (VCBlendMode)
+                final switch (_options.blendMode) with (TM_BlendMode)
                 {
                     case copy:
                         outScan[x] = fg;
@@ -1260,7 +1280,7 @@ private:
 
     void drawChar(int col, int row) @trusted
     {
-        VCCharData cdata = charAt(col, row);
+        TM_CharData cdata = charAt(col, row);
 
         int cw = charWidth();
         int ch = charHeight();
@@ -1298,11 +1318,11 @@ private:
 
     // copy _post to _blur (same space)
     // _blur is _post + filtered _emissive
-    void applyEffects(VCRect updateRect) @trusted
+    void applyEffects(TM_Rect updateRect) @trusted
     {
         if (_dirtyBlur)
         {
-            updateRect = VCRect(0, 0, _outW, _outH);
+            updateRect = TM_Rect(0, 0, _outW, _outH);
             _dirtyBlur = false;
         }
 
@@ -1316,6 +1336,7 @@ private:
             
             for (int x = updateRect.x1 - filter_2; x < updateRect.x2 + filter_2; ++x)
             {  
+                int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
                     continue;
                 float r = 0, g = 0, b = 0;
@@ -1381,7 +1402,7 @@ private:
                     return cast(ubyte)u;
                 }
 
-                static VCmax32f(float a, float b) pure
+                static TM_max32f(float a, float b) pure
                 {
                     return a < b ? a : b;
                 }
@@ -1415,9 +1436,9 @@ private:
                     // Similar tonemapping as Dplug.
                     float tmThre  = 255.0f;
                     float tmRatio = _options.tonemappingRatio; 
-                    float excessR = VCmax32f(0.0f, R - tmThre);
-                    float excessG = VCmax32f(0.0f, G - tmThre);
-                    float excessB = VCmax32f(0.0f, B - tmThre);
+                    float excessR = TM_max32f(0.0f, R - tmThre);
+                    float excessG = TM_max32f(0.0f, G - tmThre);
+                    float excessB = TM_max32f(0.0f, B - tmThre);
                     float exceedLuma = 0.3333f * excessR 
                                      + 0.3333f * excessG
                                      + 0.3333f * excessB;
@@ -1519,7 +1540,7 @@ rgba16_t linearU16Premul(rgba_t c)
 }
 
 
-static immutable uint[16][VCPalette.max+1] PALETTE_DATA =
+static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
 [
     // Vintaage
     [ 0x000000, 0x800000, 0x008000, 0x808000,
@@ -1546,44 +1567,44 @@ static immutable uint[16][VCPalette.max+1] PALETTE_DATA =
       0x729fcf, 0xad7fa8, 0x34e2e2, 0xeeeeec ],
 ];
 
-alias VCRangeFlags = int;
-enum : VCRangeFlags
+alias TM_RangeFlags = int;
+enum : TM_RangeFlags
 {
     // the whole range has the same glyph
-    VCSingleGlyph = 1
+    TM_singleGlyph = 1
 }
 
-struct VCUnicodeRange
+struct TM_UnicodeRange
 {
     dchar start, stop;
     const(ubyte)[] glyphData;
-    VCRangeFlags flags = 0;
+    TM_RangeFlags flags = 0;
 }
 
-struct VCFontDesc
+struct TM_FontDesc
 {
     int[2] charSize;
-    VCUnicodeRange[] fontData;
+    TM_UnicodeRange[] fontData;
 }
 
-int[2] fontCharSize(VCFont font) pure
+int[2] fontCharSize(TM_Font font) pure
 {
     return BUILTIN_FONTS[font].charSize;
 }
 
-const(ubyte)[] getGlyphData(VCFont font, dchar glyph) pure
+const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
 {
-    assert(font == VCFont.pcega);
-    const(VCUnicodeRange)[] fontData = BUILTIN_FONTS[font].fontData;
+    assert(font == TM_Font.pcega);
+    const(TM_UnicodeRange)[] fontData = BUILTIN_FONTS[font].fontData;
 
     int ch = 8;
     for (size_t r = 0; r < fontData.length; ++r)
     {
         if (glyph >= fontData[r].start && glyph < fontData[r].stop)
         {
-            VCRangeFlags flags = fontData[r].flags;
+            TM_RangeFlags flags = fontData[r].flags;
             
-            if ( (flags & VCSingleGlyph) != 0)
+            if ( (flags & TM_singleGlyph) != 0)
                 return fontData[r].glyphData[0..ch];
 
             uint index = glyph - fontData[r].start;
@@ -1596,12 +1617,12 @@ const(ubyte)[] getGlyphData(VCFont font, dchar glyph) pure
 }
 
 
-static immutable VCFontDesc[VCFont.max + 1] BUILTIN_FONTS =
+static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
 [
-    VCFontDesc([8, 8], 
+    TM_FontDesc([8, 8], 
     [ 
-        VCUnicodeRange(0x0000, 0x0020, CONTROL_CHARS, VCSingleGlyph),
-        VCUnicodeRange(0x0020, 0x0080, LOWER_ANSI)
+        TM_UnicodeRange(0x0000, 0x0020, CONTROL_CHARS, TM_singleGlyph),
+        TM_UnicodeRange(0x0020, 0x0080, LOWER_ANSI)
     ])
 ];
 
@@ -1895,7 +1916,7 @@ nothrow:
 @nogc:
 pure:
 
-    void initialize(VCConsole* console)
+    void initialize(TM_Console* console)
     {
         this.console = console;
     }
@@ -1955,7 +1976,7 @@ pure:
 
 private:
 
-    VCConsole* console;
+    TM_Console* console;
 
     void setColor(int col, bool bg) nothrow @nogc
     {
@@ -1965,7 +1986,7 @@ private:
             console.fg(col);
     }
 
-    void setStyle(VCStyle s) pure
+    void setStyle(TM_Style s) pure
     {
         console.style(s);
     }
@@ -1975,25 +1996,25 @@ private:
         // dup top of stack, set foreground color
         console.save();
 
-        VCStyle currentStyle = console.current.style;
+        TM_Style currentStyle = console.current.style;
 
         switch(tagName)
         {
             case "b":
             case "strong":
-                setStyle(currentStyle | VCbold);
+                setStyle(currentStyle | TM_bold);
                 break;
 
             case "blink":
-                setStyle(currentStyle | VCblink);
+                setStyle(currentStyle | TM_blink);
                 break;
 
             case "u":
-                setStyle(currentStyle | VCunderline);
+                setStyle(currentStyle | TM_underline);
                 break;
 
             case "shiny":
-                setStyle(currentStyle | VCshiny);
+                setStyle(currentStyle | TM_shiny);
                 break;
 
             default:
