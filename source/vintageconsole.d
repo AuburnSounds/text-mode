@@ -8,49 +8,11 @@ import core.stdc.stdlib: realloc, free;
 import std.utf: byDchar;
 import std.math: abs, exp;
 
-/// Selected vintage font
-/// There is only one font, our goal it provide a Unicode 8x8 font suitable
-/// for most languages. A text mode with `dchar` as input.
-enum VCFont
-{
-    // 8x8 fonts
-    pcega, /// A font dumped from BIOS around 2003, then extended
-}
-
-/// Predefined palettes (default: vintage is loaded).
-enum VCPalette
-{
-    vintage,
-    campbell,
-    oneHalfLight,
-    tango,
-}
-
-/// Rectangle.
-struct VCRect
-{
-    // Note: in vintage-console, rectangles exist in:
-    // - text space (0,0)-(columns,rows)
-    // - post-processing space
-    // - out space
-nothrow:
-@nogc:
-@safe:
-pure:
-    int x1; ///
-    int y1; ///
-    int x2; ///
-    int y2; ///
-
-    bool isEmpty() const
-    {
-        return x1 == x2 || y1 == y2;
-    }
-}
 
 /** 
-    Unit of text buffer description. This is what you can access like a 
-    "text-mode" in olden machines.
+    An individual cell of text-mode buffer.
+
+    Either you access it or use the `print` functions.
 
     The first four bytes are a Unicode codepoint, conflated with a grapheme
     and font "glyph". There is only one font, and it's 8x8, not all codepoints
@@ -66,35 +28,84 @@ static struct VCCharData
     dchar glyph     = 32;
 
     /// Low nibble = foreground color
-    // High nibble = background color
+    /// High nibble = background color
     ubyte color     = 8;  
     
     /// Style of that character
     VCStyle style; 
 }
 
-///
+
+/** 
+    Character styles.
+ */
 alias VCStyle = ubyte;
 
-///
 enum : VCStyle
 {
     VCnone      = 0, /// no style
-    VCbold      = 1, /// <b> or <strong>, not implemented
-    VCitalic    = 2, /// <i> or <em>, not implemented
+    VCshiny     = 1, /// <shiny>, emissive light
+
+    // NOT IMPLEMENTED YET:
+    VCbold      = 2, /// <b> or <strong>, not implemented
     VCunderline = 4, /// <u>, not implemented
     VCblink     = 8, /// <blink>, not implemented
-    VCshiny     = 16 /// <shiny>, emissive light
+    
+}
+
+/**
+    Predefined palettes (default: vintage is loaded).
+    You can either load a predefined palette, or change colors individually.
+ */
+enum VCPalette
+{
+    vintage,      ///
+    campbell,     ///
+    oneHalfLight, ///
+    tango,        ///
+}
+
+/**
+    Rectangle.
+    Note: in vintage-console, rectangles exist in:
+    - text space (0,0)-(columns x rows)
+    - post/blur/output space (0,0)-(outW x outH)
+*/
+struct VCRect
+{
+
+nothrow:
+@nogc:
+@safe:
+pure:
+    int x1; ///
+    int y1; ///
+    int x2; ///
+    int y2; ///
+
+    bool isEmpty() const
+    {
+        return x1 == x2 || y1 == y2;
+    }
+}
+
+/// Selected vintage font.
+/// There is only one font, our goal it provide a Unicode 8x8 font suitable
+/// for most languages, others were removed. 
+/// A text mode with `dchar` as input.
+enum VCFont
+{
+    // 8x8 fonts
+    pcega, /// A font dumped from BIOS around 2003, then extended.
 }
 
 /// How to blend on output buffer?
 enum VCBlendMode
 {
-    /// Blend foreground color (console content) with output, 
-    /// using foreground alpha
+    /// Blend console content to output, using alpha.
     sourceOver,
 
-    /// Copy foreground color (console content) to output.
+    /// Copy console content to output.
     copy,
 }
 
@@ -107,7 +118,7 @@ enum VCHorzAlign
     right
 }
 
-/// How to align vertically the console in output buffer
+/// How to align vertically the console in output buffer.
 /// Default: middle.
 enum VCVertAlign
 {
@@ -202,9 +213,9 @@ nothrow:
 
     // ███████╗████████╗██╗   ██╗██╗     ███████╗
     // ██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     ██╔════╝
-    // ███████╗   ██║    ╚████╔╝ ██║     █████╗  
-    // ╚════██║   ██║     ╚██╔╝  ██║     ██╔══╝  
-    // ███████║   ██║      ██║   ███████╗███████╗    
+    // ███████╗   ██║    ╚████╔╝ ██║     █████╗
+    // ╚════██║   ██║     ╚██╔╝  ██║     ██╔══╝
+    // ███████║   ██║      ██║   ███████╗███████╗
 
 
     /** 
@@ -212,10 +223,7 @@ nothrow:
         - foreground color
         - background color
         - cursor position
-
-        But not:
-        - palette
-        - font
+        - character style
 
         Warning: This won't report stack errors. Pair your save/restore calls,
                  else endure display bugs.
@@ -238,10 +246,9 @@ nothrow:
             _stateCount -= 1;
     }
 
-
     /**
-        Set/get font selection (default: EGA 8x8).
-        All fonts are monospaced.
+        Set/get font selection.
+        But well, there is only one font.
      */
     void font(VCFont font)
     {
@@ -532,7 +539,7 @@ nothrow:
         Here, CCL is modified to be ALWAYS VALID.
 
         - STYLE tags, such as:
-        <strong>, <b>, <em>, <i>, <u>, <blink>, <shiny>
+        <strong>, <b>, <u>, <blink>, <shiny>
 
         Escaping:
         - To pass '<' as text and not a tag, use &lt;
@@ -563,7 +570,6 @@ nothrow:
 
     /**
         Setup output buffer.
-
         Mandatory call, before being able to call `render`.
     */
     void outbuf(void* pixels, int width, int height, ptrdiff_t pitchBytes) 
@@ -753,9 +759,9 @@ private:
     float[MAX_FILTER_WIDTH] _gaussianKernel;
     enum MAX_FILTER_WIDTH = 63; // presumably this is too slow beyond that
 
-    // note: those two buffers are fake-linear, premul alpha
-    rgba16_t[] _emissive  = null;  // color of emissive, if any
-    rgba16_t[] _emissiveH  = null; // color of emissive, blurred horizontally, if any
+    // Note: those two buffers are fake-linear, premul alpha, unsigned 16-bit
+    rgba16_t[] _emit  = null;  // emissive color
+    rgba16_t[] _emitH  = null; // emissive color, horz-blurred, transposed
 
     static struct State
     {
@@ -940,10 +946,10 @@ private:
             size_t pixels = width * height;
             size_t bytesPerBuffer = pixels * 4;
             void* p = realloc_c17(_post.ptr, bytesPerBuffer * 6);
-            _post = (cast(rgba_t*)p)[0..pixels];
-            _blur = (cast(rgba_t*)p)[pixels..pixels*2];
-            _emissive = (cast(rgba16_t*)p)[pixels..pixels*2];
-            _emissiveH = (cast(rgba16_t*)p)[pixels*2..pixels*4];
+            _post  = (cast(rgba_t*)p)[0..pixels];
+            _blur  = (cast(rgba_t*)p)[pixels..pixels*2];
+            _emit  = (cast(rgba16_t*)p)[pixels..pixels*2];
+            _emitH = (cast(rgba16_t*)p)[pixels*2..pixels*4];
             _postWidth = width;
             _postHeight = height;
             _dirtyPost = true;
@@ -1059,7 +1065,7 @@ private:
 
         if (_dirtyPost)
         {
-            drawBorder = true;            
+            drawBorder = true;
         }
         if (_paletteDirty[_options.borderColor])
             drawBorder = true;
@@ -1079,7 +1085,7 @@ private:
             {
                 int charIndex = col + _columns * row;
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
-                    continue; // The character didn't change, _post is up-to-date
+                    continue; // Character didn't change, _post is up-to-date
 
                 bool shiny = (_text[charIndex].style & VCshiny) != 0;
                 copyCharBackToPost(col, row, shiny);
@@ -1108,23 +1114,28 @@ private:
                     if (posY >= _outH)
                         continue;
                     
-                    rgba_t[] postScan = _post[posY * _outW..(posY+1)* _outW];
-                    rgba16_t[] emScan = _emissive[posY * _outW..(posY+1)* _outW];
+                    int start = posY * _outW;
+                    rgba_t[]   postScan = _post[start..start+_outW];
+                    rgba16_t[] emitScan = _emit[start..start+_outW];
 
                     for (int xx = 0; xx < _outScaleX; ++xx)
                     {
                         int outX = x * _outScaleX + xx + _outMarginLeft;
                         if (outX >= _outW)
                             continue;
+
+                        // copy pixel from _back buffer to _post
                         postScan[outX] = fg;
-                        emScan[outX] = rgba16_t(0, 0, 0, 0);
+
+                        // but also write its emissiveness
+                        emitScan[outX] = rgba16_t(0, 0, 0, 0);
                         if (shiny)
                         {
                             // premul and pow^2, better for blur
-                            emScan[outX].r = cast(ushort)( (fg.r * 255 * fg.a) >> 8 );
-                            emScan[outX].g = cast(ushort)( (fg.g * 255 * fg.a) >> 8 );
-                            emScan[outX].b = cast(ushort)( (fg.b * 255 * fg.a) >> 8 );
-                            emScan[outX].a = cast(ushort)( (fg.a * 255 * fg.a) >> 8 );
+                            emitScan[outX].r = fg.r * fg.a;
+                            emitScan[outX].g = fg.g * fg.a;
+                            emitScan[outX].b = fg.b * fg.a;
+                            emitScan[outX].a = fg.a * fg.a;
                         }
                     }
                 }
@@ -1225,8 +1236,8 @@ private:
         // blur emissive horizontally, from _emissive to _emissiveH
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
-            rgba16_t* emissiveScan = &_emissive[_postWidth * y]; 
-            rgba16_t* emissiveHScan = &_emissiveH[_postWidth * y]; 
+            rgba16_t* emissiveScan  = &_emit[_postWidth * y]; 
+            rgba16_t* emissiveHScan = &_emitH[_postWidth * y]; 
             for (int x = updateRect.x1; x < updateRect.x2; ++x)
             {  
                 if (x < 0) continue;
@@ -1263,7 +1274,7 @@ private:
             for (int x = updateRect.x1 - fWidthDiv2; x < updateRect.x2 + fWidthDiv2; ++x)
             {
                 // blur vertically
-                float r = 0, g = 0, b = 0;        
+                float r = 0, g = 0, b = 0;
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
 
@@ -1272,11 +1283,11 @@ private:
                     int ye = y + n;
                     if (ye < 0) continue;
                     if (ye >= _postHeight) continue;
-                    rgba16_t emissiveH = _emissiveH[_postWidth * ye + x];
+                    rgba16_t emitH = _emitH[_postWidth * ye + x];
                     float factor = _gaussianKernel[fWidthDiv2 + n];
-                    r += emissiveH.r * factor;
-                    g += emissiveH.g * factor;
-                    b += emissiveH.b * factor;
+                    r += emitH.r * factor;
+                    g += emitH.g * factor;
+                    b += emitH.b * factor;
                 }
 
                 static ubyte clamp_0_255(float t)
@@ -1798,11 +1809,6 @@ private:
             case "b":
             case "strong":
                 setStyle(currentStyle | VCbold);
-                break;
-
-            case "em":
-            case "i":
-                setStyle(currentStyle | VCitalic);
                 break;
 
             case "blink":
