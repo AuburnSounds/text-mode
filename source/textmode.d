@@ -1,4 +1,4 @@
-module vintageconsole;
+module textmode;
 
 nothrow @nogc @safe:
 
