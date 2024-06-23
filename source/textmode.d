@@ -12,6 +12,30 @@ nothrow:
 @nogc:
 @safe:
 
+/// A text mode palette index.
+alias TM_Color = int;
+
+/// Helpers for text mode colors.
+enum : TM_Color
+{
+    TM_black    = 0, ///
+    TM_red      = 1, ///
+    TM_green    = 2, ///
+    TM_orange   = 3, ///
+    TM_blue     = 4, ///
+    TM_magenta  = 5, ///
+    TM_cyan     = 6, ///
+    TM_lgrey    = 7, ///
+    TM_grey     = 8, ///
+    TM_lred     = 9, ///
+    TM_lgreen   = 10, ///
+    TM_yellow   = 11, ///
+    TM_lblue    = 12, ///
+    TM_lmagenta = 13, ///
+    TM_lcyan    = 14, ///
+    TM_white    = 15 ///
+}
+
 /** 
     An individual cell of text-mode buffer.
 
@@ -31,9 +55,9 @@ static struct TM_CharData
     /// compose codepoints.
     dchar glyph     = 32;
 
-    /// Low nibble  = foreground color (0 to 15)
+    /// Low nibble = foreground color (0 to 15)
     /// High nibble = background color (0 to 15)
-    ubyte color     = 8;  
+    ubyte color     = (TM_black << 4) + TM_grey;  
 
     /// Style of that character, a combination of TM_Style flags.
     TM_Style style; 
@@ -48,10 +72,10 @@ enum : TM_Style
 {
     TM_none      = 0, /// no style
     TM_shiny     = 1, /// <shiny>, emissive light
+    TM_bold      = 2, /// <b> or <strong>, pixels are 2x1
+    TM_underline = 4, /// <u>, lowest row is filled
 
-    // NOT IMPLEMENTED YET:
-    TM_bold      = 2, /// <b> or <strong>, not implemented
-    TM_underline = 4, /// <u>, not implemented
+    // NOT IMPLEMENTED YET:    
     TM_blink     = 8, /// <blink>, not implemented
 }
 
@@ -116,24 +140,24 @@ enum TM_BlendMode
 /// Default: center.
 enum TM_HorzAlign
 {
-    left,
-    center,
-    right
+    left,   ///
+    center, ///
+    right   ///
 }
 
 /// How to align vertically the console in output buffer.
 /// Default: middle.
 enum TM_VertAlign
 {
-    top,
-    middle,
-    bottom
+    top,    ///
+    middle, ///
+    bottom  ///
 }
 
 /// Various options to change behaviour of the library.
 struct TM_Options
 {
-    TM_BlendMode blendMode = TM_BlendMode.copy; ///
+    TM_BlendMode blendMode = TM_BlendMode.sourceOver; ///
     TM_HorzAlign halign    = TM_HorzAlign.center; ///
     TM_VertAlign valign    = TM_VertAlign.middle; ///
 
@@ -141,43 +165,62 @@ struct TM_Options
     /// It is considered our changes are still there and not erased,
     /// unless the size of the buffer has changed, or its location.
     /// In this case we can draw less.
-    bool allowOutCaching  = true;
+    bool allowOutCaching   = true;
 
     /// Palette color of the borderColor;
-    ubyte borderColor     = 0;
+    ubyte borderColor      = 0;
 
     /// Is the border color itself <shiny>?
-    bool borderShiny      = false;
+    bool borderShiny       = false;
+
+
+    // <blur>
 
     /// Quantity of blur added by TM_shiny / <shiny>
-    float blurAmount      = 1.0f;
+    /// (1.0f means default).
+    float blurAmount       = 1.0f;
 
     /// Kernel size in multiple of default value.
-    /// This changes the blur kernel size.
-    float blurScale       = 1.0f;
+    /// This changes the blur filter width (1.0f means default).
+    float blurScale        = 1.0f;
 
     /// Whether foreground/background color contributes to blur.    
-    bool blurForeground   = true;
-    bool blurBackground   = true; ///ditto
+    bool blurForeground    = true;
+    bool blurBackground    = true; ///ditto
+
+    /// Luminance blue noise texture, applied to blur effect.
+    bool noiseTexture      = true;
+
+    /// Quantity of that texture (1.0f means default).
+    float noiseAmount      = 1.0f;
+
+    // </blur>
+
+
+    // <tonemapping>
 
     /// Enable or disable tonemapping.
-    bool tonemapping      = false;
+    bool tonemapping       = false;
 
     /// Channels that exceed 1.0f, bleed that much in other channels.
     float tonemappingRatio = 0.3f;
 
-    /// Luminance blue noise texture, applied to blur effect.
-    bool noiseTexture     = true;
-
-    /// Quantity of that texture (1.0f means recommended quantity).
-    float noiseAmount     = 1.0f;
+    // </tonemapping>
 }
 
 
 /** 
     Main API of the vintage-console library.
 
-    Note: none of the `TM_Console` functions are thread-safe. Either 
+
+    3 mandatory calls:
+
+        TM_Console console;
+        console.size(columns, rows);
+        console.outbuf(buf.ptr, buf.w, buf.h, buf.pitchBytes);
+        console.render();
+
+    Note: None of the `TM_Console` functions are thread-safe. Either
           call them single-threaded, or synchronize externally.
           None of them can be called concurrently, unless it's 
           different `TM_Console` objects.
@@ -197,8 +240,8 @@ nothrow:
 
 
     /**
+        (MANDATORY)
         Set/get size of text buffer.
-        Mandatory call.
         Warning: this clears the screen like calling `cls`.
 
         See_also: outbuf
@@ -251,7 +294,7 @@ nothrow:
     /**
         Set current foreground color.
      */
-    void fg(int fg) pure
+    void fg(TM_Color fg) pure
     {
         assert(fg >= 0 && fg < 16);
         current.fg = cast(ubyte)fg;
@@ -260,7 +303,7 @@ nothrow:
     /**
         Set current background color.
      */
-    void bg(int bg) pure
+    void bg(TM_Color bg) pure
     {
         assert(bg >= 0 && bg < 16);
         current.bg = cast(ubyte)bg;
@@ -634,6 +677,8 @@ nothrow:
     // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
 
     /**
+        (MANDATORY)
+
         Setup output buffer.
         Mandatory call, before being able to call `render`.
 
@@ -665,6 +710,8 @@ nothrow:
     }
 
     /**
+        (MANDATORY, well if you want some output)
+
         Render console to output buffer. After this call, the output
         buffer is up-to-date with the changes in text buffer content.
 
