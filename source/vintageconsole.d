@@ -27,14 +27,15 @@ nothrow:
 */
 static struct VCCharData
 {
-    ///
+    /// Unicode codepoint to represent. This library doesn't 
+    /// compose codepoints.
     dchar glyph     = 32;
 
-    /// Low nibble = foreground color
-    /// High nibble = background color
+    /// Low nibble  = foreground color (0 to 15)
+    /// High nibble = background color (0 to 15)
     ubyte color     = 8;  
-    
-    /// Style of that character
+
+    /// Style of that character, a combination of VCStyle flags.
     VCStyle style; 
 }
 
@@ -1064,11 +1065,11 @@ private:
                     VCCharData cache =  _cache[icell];
                     bool redraw = false;
                     if (text != cache)
-                        redraw = true;
+                        redraw = true; // chardata changed
                     else if (_paletteDirty[text.color & 0x0f])
-                        redraw = true;
+                        redraw = true; // fg color changed
                     else if (_paletteDirty[text.color >>> 4])
-                        redraw = true;
+                        redraw = true; // bg color changed
                     if (redraw)
                     {
                         if (bounds.x1 > col  ) bounds.x1 = col;
@@ -1125,7 +1126,7 @@ private:
             {
                 int charIndex = col + _columns * row;
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
-                    continue; // Character didn't change, _post is up-to-date
+                    continue; // char didn't change
 
                 bool shiny = (_text[charIndex].style & VCshiny) != 0;
                 copyCharBackToPost(col, row, shiny);
