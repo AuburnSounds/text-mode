@@ -1277,7 +1277,7 @@ private:
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
             rgba16_t* emitScan  = &_emit[_postWidth * y]; 
-            rgba16_t* emitHScan = &_emitH[_postWidth * y]; 
+            
             for (int x = updateRect.x1; x < updateRect.x2; ++x)
             {  
                 if (x < 0) continue;
@@ -1296,21 +1296,25 @@ private:
                     g += emit.g * factor;
                     b += emit.b * factor;
                 }
-                emitHScan[x].r = cast(ushort)r;
-                emitHScan[x].g = cast(ushort)g;
-                emitHScan[x].b = cast(ushort)b;
+
+                // store result transposed in _emitH
+                // for faster convolution in Y afterwards
+                rgba16_t* emitHResult = &_emitH[_postHeight * x + y];
+                emitHResult.r = cast(ushort)r;
+                emitHResult.g = cast(ushort)g;
+                emitHResult.b = cast(ushort)b;
             }
         }
 
-        // Note: updateRect is now extended horizontally by fWidthDiv2 
+        // Note: updateRect is now extended horizontally by filter_2
         // on each sides, since update rect of _emissiveH is larger.
 
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
  
-            const(rgba_t)* postScan = &_post[_postWidth * y];
-            rgba_t*        blurScan = &_blur[_postWidth * y];
-
+            const(rgba_t)*   postScan = &_post[_postWidth * y];
+            rgba_t*          blurScan = &_blur[_postWidth * y];
+            
             for (int x = updateRect.x1 - filter_2; 
                      x < updateRect.x2 + filter_2; ++x)
             {
@@ -1321,12 +1325,14 @@ private:
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
 
+                const(rgba16_t)* emitHScan = &_emitH[_postHeight * x];
+
                 for (int n = -filter_2; n <= filter_2; ++n)
                 {
                     int ye = y + n;
                     if (ye < 0) continue;
                     if (ye >= _postHeight) continue;
-                    rgba16_t emitH = _emitH[_postWidth * ye + x];
+                    rgba16_t emitH = emitHScan[ye];
                     float factor = _blurKernel[filter_2 + n];
                     blurR += emitH.r * factor;
                     blurG += emitH.g * factor;
