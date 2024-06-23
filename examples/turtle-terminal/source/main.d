@@ -61,14 +61,15 @@ class TermExample : TurtleGame
                 int row = cast(int) randNormal(25/2, 12);
                 int cfg = (cast(int) randNormal(0, 100)) & 15;
                 int cbg = (cast(int) randNormal(0, 100)) & 15;
-                //  fg(cfg);
-                //  bg(cbg);
+                  fg(cfg);
+                  bg(cbg);
                 int ch = (cast(int) randNormal(0, 1000)) & 255;   
-                if (ch < 10)
+               // if (ch < 10)
                 {
+                    style(VCshiny);
                     locate(col, row);
-                    //print(cast(char)ch);
-                    cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
+                    print(cast(char)ch);
+                    //cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
                 }
             }
          }

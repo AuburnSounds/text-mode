@@ -53,7 +53,6 @@ enum : VCStyle
     VCbold      = 2, /// <b> or <strong>, not implemented
     VCunderline = 4, /// <u>, not implemented
     VCblink     = 8, /// <blink>, not implemented
-    
 }
 
 /**
@@ -157,6 +156,15 @@ struct VCOptions
     /// Enable or disable tonemapping. A way to mix excess energy 
     /// from blur.
     bool tonemapping = true;
+
+    /// How much the channels that exceed 1.0f bleed in other channels.
+    float tonemappingRatio = 0.25f;
+
+    /// Luminance blue noise texture.
+    bool noiseTexture = true;
+
+    /// Quantity of that texture (1.0f means recommended quantity).
+    float noiseAmount = 1.0f;
 }
 
 
@@ -1259,17 +1267,17 @@ private:
             _dirtyBlur = false;
         }
 
-        // PERF: transpose intermediate buffer _emissiveH
-        // PERF: alpha useless in _emissive
-        // PERF: alpha useless in _emissiveH
+        // PERF: transpose intermediate buffer _emitH
+        // PERF: alpha useless in _emit
+        // PERF: alpha useless in _emitH
 
-        int fWidthDiv2 = _filterWidth / 2;
+        int filter_2 = _filterWidth / 2;
 
-        // blur emissive horizontally, from _emissive to _emissiveH
+        // blur emissive horizontally, from _emit to _emitH
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
-            rgba16_t* emissiveScan  = &_emit[_postWidth * y]; 
-            rgba16_t* emissiveHScan = &_emitH[_postWidth * y]; 
+            rgba16_t* emitScan  = &_emit[_postWidth * y]; 
+            rgba16_t* emitHScan = &_emitH[_postWidth * y]; 
             for (int x = updateRect.x1; x < updateRect.x2; ++x)
             {  
                 if (x < 0) continue;
@@ -1277,20 +1285,20 @@ private:
 
                 float r = 0, g = 0, b = 0;
                 float[] kernel = _blurKernel;
-                for (int n = -fWidthDiv2; n <= fWidthDiv2; ++n)
+                for (int n = -filter_2; n <= filter_2; ++n)
                 {
                     int xe = x + n;
                     if (xe < 0) continue;
                     if (xe >= _postWidth) continue;
-                    rgba16_t emissive = emissiveScan[xe];
-                    float factor = _blurKernel[fWidthDiv2 + n];
-                    r += emissive.r * factor;
-                    g += emissive.g * factor;
-                    b += emissive.b * factor;
+                    rgba16_t emit = emitScan[xe];
+                    float factor = _blurKernel[filter_2 + n];
+                    r += emit.r * factor;
+                    g += emit.g * factor;
+                    b += emit.b * factor;
                 }
-                emissiveHScan[x].r = cast(ushort)r;
-                emissiveHScan[x].g = cast(ushort)g;
-                emissiveHScan[x].b = cast(ushort)b;
+                emitHScan[x].r = cast(ushort)r;
+                emitHScan[x].g = cast(ushort)g;
+                emitHScan[x].b = cast(ushort)b;
             }
         }
 
@@ -1303,8 +1311,8 @@ private:
             const(rgba_t)* postScan = &_post[_postWidth * y];
             rgba_t*        blurScan = &_blur[_postWidth * y];
 
-            for (int x = updateRect.x1 - fWidthDiv2; 
-                     x < updateRect.x2 + fWidthDiv2; ++x)
+            for (int x = updateRect.x1 - filter_2; 
+                     x < updateRect.x2 + filter_2; ++x)
             {
                 // blur vertically
                 float blurR = 0, 
@@ -1313,13 +1321,13 @@ private:
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
 
-                for (int n = -fWidthDiv2; n <= fWidthDiv2; ++n)
+                for (int n = -filter_2; n <= filter_2; ++n)
                 {
                     int ye = y + n;
                     if (ye < 0) continue;
                     if (ye >= _postHeight) continue;
                     rgba16_t emitH = _emitH[_postWidth * ye + x];
-                    float factor = _blurKernel[fWidthDiv2 + n];
+                    float factor = _blurKernel[filter_2 + n];
                     blurR += emitH.r * factor;
                     blurG += emitH.g * factor;
                     blurB += emitH.b * factor;
@@ -1348,9 +1356,9 @@ private:
 
                 if (_options.tonemapping)
                 {
-                    // Same tonemapping as default one in Dplug.
+                    // Similar tonemapping as Dplug.
                     float tmThre  = 255.0f;
-                    float tmRatio = 0.3f; 
+                    float tmRatio = _options.tonemappingRatio; 
                     float excessR = VCmax32f(0.0f, R - tmThre);
                     float excessG = VCmax32f(0.0f, G - tmThre);
                     float excessB = VCmax32f(0.0f, B - tmThre);
@@ -1363,7 +1371,16 @@ private:
                     G += exceedLuma * tmRatio;
                     B += exceedLuma * tmRatio;
                 }
-                
+
+                if (_options.noiseTexture)
+                {
+                    float noiseAmount = _options.noiseAmount * 0.0003f;
+                    float noise = BLUE_NOISE_16x16[(x & 15)*16 + (y & 15)];
+                    noise = (noise - 127.5f) * noiseAmount;
+                    R *= (1.0 + noise);
+                    G *= (1.0 + noise);
+                    B *= (1.0 + noise);
+                }
                 post.r = clamp_0_255(R);
                 post.g = clamp_0_255(G);
                 post.b = clamp_0_255(B);
@@ -1384,6 +1401,27 @@ struct rgba16_t
 {
     ushort r, g, b, a;
 }
+
+// 16x16 Patch of 8-bit blue noise, tileable.
+private static immutable ubyte[256] BLUE_NOISE_16x16 =
+[
+    127, 194, 167,  79,  64, 173,  22,  83, 167, 105, 119, 250, 201,  34, 214, 145, 
+    233,  56,  13, 251, 203, 124, 243,  42, 216,  34,  73, 175, 133,  64, 185,  73, 
+    93, 156, 109, 144,  34,  98, 153, 138, 187, 238, 155,  46,  13, 102, 247,   0,
+    28, 180,  46, 218, 183,  13, 212,  69,  13,  92, 126, 228, 211, 161, 117, 197, 
+    134, 240, 121,  75, 234,  88,  53, 170, 109, 204,  59,  22,  86, 141,  38, 222,
+    81, 205,  13,  59, 160, 198, 129, 252,   0, 147, 176, 193, 244,  71, 173,  56,
+    22, 168, 104, 139,  22, 114,  38, 220, 101, 231,  77,  34, 113,  13, 189,  96, 
+    253, 148, 227, 190, 246, 174,  66, 155,  28,  50, 164, 131, 217, 151, 232, 128, 
+    115,  69,  34,  50,  93,  13, 209,  85, 192, 120, 248,  64,  90,  28, 208,  42,
+    0, 200, 215,  79, 125, 148, 239, 136, 181,  22, 206,  13, 185, 108,  59, 179,
+    90, 130, 159, 182, 235,  42, 106,   0,  56,  99, 226, 140, 157, 237,  77, 165, 
+    249,  28, 105,  13,  61, 170, 224,  75, 202, 163, 114,  81,  46,  22, 137, 223, 
+    189,  53, 219, 142, 196,  28, 122, 154, 254,  42,  28, 242, 196, 210, 119,  38, 
+    149,  86, 118, 245,  71,  96, 213,  13,  88, 178,  66, 129, 171,   0,  99,  69, 
+    178,  13, 207,  38, 159, 187,  50, 132, 236, 146, 191,  95,  53, 229, 163, 241,
+    46, 225, 102, 135,   0, 230, 110, 199,  61,   0, 221,  22, 150,  83, 112, 22
+];
 
 void* realloc_c17(void* p, size_t size) @system
 {
