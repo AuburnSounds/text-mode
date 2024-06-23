@@ -15,8 +15,10 @@ class TermExample : TurtleGame
 
         VCOptions options;
         options.allowOutCaching = true; // doable because background color is set to transparent
+        options.borderColor = 0;
+        options.borderShiny = false;
         console.options(options);
-
+        console.palette(VCPalette.campbell);
     }
 
     override void load()
@@ -55,21 +57,23 @@ class TermExample : TurtleGame
         
          with(console)
          {
-            for (int i = 0; i < 2; ++i)
+            for (int i = 0; i < 1; ++i)
             {
                 int col = cast(int) randNormal(80/2, 40);
                 int row = cast(int) randNormal(25/2, 12);
                 int cfg = (cast(int) randNormal(0, 100)) & 15;
                 int cbg = (cast(int) randNormal(0, 100)) & 15;
+                if (row >= 20)
+                    continue;
                   fg(cfg);
-                  bg(cbg);
+                //  bg(cbg);
                 int ch = (cast(int) randNormal(0, 1000)) & 255;   
                // if (ch < 10)
                 {
                     style(VCshiny);
                     locate(col, row);
-                    print(cast(char)ch);
-                    //cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
+                    //print(cast(char)ch);
+                    cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
                 }
             }
          }

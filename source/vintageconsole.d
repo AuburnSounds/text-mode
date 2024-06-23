@@ -6,7 +6,7 @@ import core.memory;
 import core.stdc.stdlib: realloc, free;
 
 import std.utf: byDchar;
-import std.math: abs, exp;
+import std.math: abs, exp, sqrt;
 
 nothrow:
 @nogc:
@@ -38,7 +38,6 @@ static struct VCCharData
     /// Style of that character, a combination of VCStyle flags.
     VCStyle style; 
 }
-
 
 /** 
     Character styles.
@@ -134,7 +133,7 @@ enum VCVertAlign
 /// Various options to change behaviour of the library.
 struct VCOptions
 {
-    VCBlendMode blendMode = VCBlendMode.sourceOver; ///
+    VCBlendMode blendMode = VCBlendMode.copy; ///
     VCHorzAlign halign    = VCHorzAlign.center; ///
     VCVertAlign valign    = VCVertAlign.middle; ///
 
@@ -142,30 +141,36 @@ struct VCOptions
     /// It is considered our changes are still there and not erased,
     /// unless the size of the buffer has changed, or its location.
     /// In this case we can draw less.
-    bool allowOutCaching = true;
+    bool allowOutCaching  = true;
 
     /// Palette color of the borderColor;
-    ubyte borderColor = 0;
+    ubyte borderColor     = 0;
+
+    /// Is the border color itself <shiny>?
+    bool borderShiny      = false;
 
     /// Quantity of blur added by VCshiny / <shiny>
-    float blurAmount = 1.0f;
+    float blurAmount      = 1.0f;
 
-    /// Kernel size in multiple of character width.
-    /// This changes the blur quality.
-    float blurScale = 2.0f;
+    /// Kernel size in multiple of default value.
+    /// This changes the blur kernel size.
+    float blurScale       = 1.0f;
 
-    /// Enable or disable tonemapping. A way to mix excess energy 
-    /// from blur.
-    bool tonemapping = true;
+    /// Whether foreground/background color contributes to blur.    
+    bool blurForeground   = true;
+    bool blurBackground   = true; ///ditto
 
-    /// How much the channels that exceed 1.0f bleed in other channels.
-    float tonemappingRatio = 0.25f;
+    /// Enable or disable tonemapping.
+    bool tonemapping      = false;
 
-    /// Luminance blue noise texture.
-    bool noiseTexture = true;
+    /// Channels that exceed 1.0f, bleed that much in other channels.
+    float tonemappingRatio = 0.3f;
+
+    /// Luminance blue noise texture, applied to blur effect.
+    bool noiseTexture     = true;
 
     /// Quantity of that texture (1.0f means recommended quantity).
-    float noiseAmount = 1.0f;
+    float noiseAmount     = 1.0f;
 }
 
 
@@ -779,10 +784,16 @@ private:
     VCRect   _lastBounds; // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
-    // In this buffer, every character is rendered next to each other.
+    // In _back and _backFlags buffer, every character is rendered 
+    // next to each other without gaps.
     int _backWidth  = -1;
     int _backHeight = -1;
     rgba_t[] _back  = null;
+    ubyte[] _backFlags = null;
+    enum : ubyte
+    {
+        BACK_IS_FG = 1, // fg when present, bg else
+    }
 
     // A buffer for effects, same size as outbuf (including borders)
     // In _post/_blur/_emit/_emitH buffers, scale is applied and also 
@@ -801,19 +812,18 @@ private:
     enum MAX_FILTER_WIDTH = 63; // presumably this is slow beyond that
 
     // Note: those two buffers are fake-linear, premul alpha, u16
-    rgba16_t[] _emit  = null;  // emissive color
-    rgba16_t[] _emitH  = null; // emissive color, horz-blur (TODO)transposed
+    rgba16_t[] _emit  = null; // emissive color
+    rgba16_t[] _emitH = null; // same, but horz-blurred, transposed
 
     static struct State
     {
-        ubyte bg       = 0;
-        ubyte fg       = 8;
-        int ccol = 0; // curor col  (X position)
-        int crow = 0; // cursor row (Y position)
+        ubyte bg      = 0;
+        ubyte fg      = 8;
+        int ccol      = 0; // curor col  (X position)
+        int crow      = 0; // cursor row (Y position)
         VCStyle style = 0;
 
         // for the CCL interpreter
-        const(char)[] lastAppliedTag;
         int inputPos; // position of the opening tag in input chars.
     }
 
@@ -908,7 +918,7 @@ private:
             _outScaleX = scale;
             _outScaleY = scale;
 
-            float filterSize = charW * scale * _options.blurScale;
+            float filterSize = charW * scale * _options.blurScale * 2.5f;
             updateFilterSize( cast(int)(0.5f + filterSize) ); 
         }
     }
@@ -936,11 +946,11 @@ private:
 
     VCRect extendByFilterWidth(VCRect r)
     {
-        int filterRadius = _filterWidth/2;
-        r.x1 -= filterRadius;
-        r.x2 += filterRadius;
-        r.y1 -= filterRadius;
-        r.y2 += filterRadius;
+        int filter_2 = _filterWidth / 2;
+        r.x1 -= filter_2;
+        r.x2 += filter_2;
+        r.y1 -= filter_2;
+        r.y2 += filter_2;
         if (r.x1 < 0) r.x1 = 0;
         if (r.y1 < 0) r.y1 = 0;
         if (r.x2 > _outW) r.x2 = _outW;
@@ -978,9 +988,9 @@ private:
         {
             _dirtyAllChars = true;
             size_t pixels = width * height;
-            size_t bytesPerBuffer = pixels * 4;
-            void* p = realloc_c17(_back.ptr, bytesPerBuffer);
-            _back = (cast(rgba_t*)p)[0..pixels];
+            void* p = realloc_c17(_back.ptr, pixels * 5);
+            _back      = (cast(rgba_t*)p)[0..pixels];
+            _backFlags = (cast(ubyte*) p)[pixels*4..pixels*5];
             _backHeight = height;
             _backWidth = width;
         }
@@ -1016,8 +1026,7 @@ private:
         if (filterSize != _filterWidth)
         {
             _filterWidth = filterSize;
-
-            double sigma = (filterSize - 1) / 6.0;
+            double sigma = (filterSize - 1) / 8.0;
             double mu = 0.0;
             makeGaussianKernel(filterSize, sigma, mu, _blurKernel[]);
             _dirtyBlur = true;
@@ -1031,10 +1040,10 @@ private:
     //  - font changed
     //  - size changed
     //
-    // Returns: the rectangle that need to change, in text buffer coordinates
+    // Returns: A rectangle that needs to change, in text coordinates.
     VCRect invalidateChars()
     {
-        // the validation results itself might not need to be recomputed
+        // validation results might not need to be recomputed
         if (!_dirtyValidation)
             return _lastBounds;
 
@@ -1091,12 +1100,19 @@ private:
     }
 
     // Draw all chars from _text to _back, no caching yet
-    void drawAllChars(VCRect textRect){ for (int row = textRect.y1; row <
-    textRect.y2; ++row){ for (int col = textRect.x1; col <
-    textRect.x2; ++col){ if (_charDirty[col + _columns * row]) drawChar
-    (col, row); } } }
+    void drawAllChars(VCRect textRect)
+    { 
+        for (int row = textRect.y1; row < textRect.y2; ++row)
+        { 
+            for (int col = textRect.x1; col < textRect.x2; ++col)
+            { 
+                if (_charDirty[col + _columns * row]) 
+                    drawChar(col, row); 
+            } 
+        } 
+    }
 
-    // Draw from _back to _post
+    // Draw from _back/_backFlags to _post/_emit
     // Returns changed rect, in pixels
     VCRect backToPost(VCRect textRect) @trusted
     {
@@ -1113,8 +1129,17 @@ private:
 
         if (drawBorder)
         {
-            // PERF: only draw the black borders
-            _post[] = _palette[_options.borderColor];
+            rgba_t border = _palette[_options.borderColor];
+
+            // PERF: only draw the border areas
+            _post[] = border;
+
+            // now also fill _emit, and since border is never <shiny>
+            if (_options.borderShiny)
+                _emit[] = linearU16Premul(border);
+            else
+                _emit[] = rgba16_t(0, 0, 0, 0);
+
             postRect = VCRect(0, 0, _postWidth, _postHeight);
             textRect = VCRect(0, 0, _columns, _rows);
         }
@@ -1146,9 +1171,17 @@ private:
         for (int y = row*ch; y < (row+1)*ch; ++y)
         {
             const(rgba_t)* backScan = &_back[backPitch * y];
+            const(ubyte)* backFlags = &_backFlags[backPitch * y]; 
+
             for (int x = col*cw; x < (col+1)*cw; ++x)
             {
-                rgba_t fg = backScan[x];
+                rgba_t fg   = backScan[x];
+                ubyte flags = backFlags[x];
+                bool isFg = (flags & BACK_IS_FG) != 0;
+                bool emitLight =
+                    shiny && ( ( isFg && _options.blurForeground)
+                            || (!isFg && _options.blurBackground) );
+
                 for (int yy = 0; yy < _outScaleY; ++yy)
                 {
                     int posY = y * _outScaleY + yy + _outMarginTop;
@@ -1161,7 +1194,8 @@ private:
 
                     for (int xx = 0; xx < _outScaleX; ++xx)
                     {
-                        int outX = x * _outScaleX + xx + _outMarginLeft;
+                        int outX = x * _outScaleX 
+                                 + xx + _outMarginLeft;
                         if (outX >= _outW)
                             continue;
 
@@ -1170,13 +1204,10 @@ private:
 
                         // but also write its emissiveness
                         emitScan[outX] = rgba16_t(0, 0, 0, 0);
-                        if (shiny)
+                        if (emitLight)
                         {
-                            // premul and pow^2, better for blur
-                            emitScan[outX].r = fg.r * fg.a;
-                            emitScan[outX].g = fg.g * fg.a;
-                            emitScan[outX].b = fg.b * fg.a;
-                            emitScan[outX].a = fg.a * fg.a;
+                            emitScan[outX] = linearU16Premul(fg);
+
                         }
                     }
                 }
@@ -1202,7 +1233,8 @@ private:
         for (int y = changeRect.y1; y < changeRect.y2; ++y)
         {
             const(rgba_t)* postScan = &_blur[_postWidth * y];
-            rgba_t*         outScan = cast(rgba_t*)(_outPixels + _outPitch * y);
+            rgba_t*         outScan = cast(rgba_t*)(_outPixels 
+                                                     + _outPitch * y);
 
             for (int x = changeRect.x1; x < changeRect.x2; ++x)
             {
@@ -1244,14 +1276,20 @@ private:
             const int yback = row * ch + y;
             const int bits  = glyphData[y];
 
-            rgba_t* pixels  = &_back[(_columns * cw) * yback + (col * cw)];
+            int idx = (_columns * cw) * yback + (col * cw);
+            rgba_t* pixels = &_back[idx];
+            ubyte*  flags  = &_backFlags[idx];
             if (bits == 0)
-                pixels[0..cw] = bgCol; // speed-up empty lines 
+            {
+                flags[0..cw]  = 0;     // all bg
+                pixels[0..cw] = bgCol; // speed-up empty lines
+            }
             else
             {   
                 for (int x = 0; x < cw; ++x)
                 {
                     bool on = (bits >> (cw - 1 - x)) & 1;
+                    flags[x]  = on ? BACK_IS_FG : 0;
                     pixels[x] = on ? fgCol : bgCol;
                 }
             }
@@ -1268,29 +1306,25 @@ private:
             _dirtyBlur = false;
         }
 
-        // PERF: transpose intermediate buffer _emitH
-        // PERF: alpha useless in _emit
-        // PERF: alpha useless in _emitH
-
         int filter_2 = _filterWidth / 2;
 
         // blur emissive horizontally, from _emit to _emitH
+        // the updated area is updateRect enlarged horizontally.
         for (int y = updateRect.y1; y < updateRect.y2; ++y)
         {
             rgba16_t* emitScan  = &_emit[_postWidth * y]; 
             
-            for (int x = updateRect.x1; x < updateRect.x2; ++x)
+            for (int x = updateRect.x1 - filter_2; x < updateRect.x2 + filter_2; ++x)
             {  
-                if (x < 0) continue;
-                if (x >= _postWidth) continue;
-
+                if (x < 0 || x >= _postWidth) 
+                    continue;
                 float r = 0, g = 0, b = 0;
                 float[] kernel = _blurKernel;
                 for (int n = -filter_2; n <= filter_2; ++n)
                 {
                     int xe = x + n;
-                    if (xe < 0) continue;
-                    if (xe >= _postWidth) continue;
+                    if (xe < 0 || xe >= _postWidth) 
+                        continue;
                     rgba16_t emit = emitScan[xe];
                     float factor = _blurKernel[filter_2 + n];
                     r += emit.r * factor;
@@ -1300,18 +1334,17 @@ private:
 
                 // store result transposed in _emitH
                 // for faster convolution in Y afterwards
-                rgba16_t* emitHResult = &_emitH[_postHeight * x + y];
-                emitHResult.r = cast(ushort)r;
-                emitHResult.g = cast(ushort)g;
-                emitHResult.b = cast(ushort)b;
+                rgba16_t* emitH = &_emitH[_postHeight * x + y];
+                emitH.r = cast(ushort)r;
+                emitH.g = cast(ushort)g;
+                emitH.b = cast(ushort)b;
             }
         }
 
-        // Note: updateRect is now extended horizontally by filter_2
-        // on each sides, since update rect of _emissiveH is larger.
-
-        for (int y = updateRect.y1; y < updateRect.y2; ++y)
+        for (int y = updateRect.y1 - filter_2; y < updateRect.y2 + filter_2; ++y)
         {
+            if (y < 0 || y >= _postHeight) 
+                continue;
  
             const(rgba_t)*   postScan = &_post[_postWidth * y];
             rgba_t*          blurScan = &_blur[_postWidth * y];
@@ -1353,7 +1386,23 @@ private:
                     return a < b ? a : b;
                 }
 
-                float BLUR_AMOUNT = _options.blurAmount / 255.0f;
+                blurR = sqrt(blurR);
+                blurG = sqrt(blurG);
+                blurB = sqrt(blurB);
+
+                if (_options.noiseTexture)
+                {
+                    // so that the user has easier tuning values
+                    enum float NSCALE = 0.0006f;
+                    float noiseAmount = _options.noiseAmount * NSCALE;
+                    float noise = NOISE_16x16[(x & 15)*16 + (y & 15)];
+                    noise = (noise - 127.5f) * noiseAmount;
+                    blurR *= (1.0 + noise);
+                    blurG *= (1.0 + noise);
+                    blurB *= (1.0 + noise);
+                }
+
+                float BLUR_AMOUNT = _options.blurAmount;
 
                 // Add blur
                 rgba_t post = postScan[x];
@@ -1369,25 +1418,16 @@ private:
                     float excessR = VCmax32f(0.0f, R - tmThre);
                     float excessG = VCmax32f(0.0f, G - tmThre);
                     float excessB = VCmax32f(0.0f, B - tmThre);
-                    float exceedLuma = 0.212655f * excessR 
-                                     + 0.715158f * excessG
-                                     + 0.072187f * excessB;
+                    float exceedLuma = 0.3333f * excessR 
+                                     + 0.3333f * excessG
+                                     + 0.3333f * excessB;
 
                     // Add excess energy in all channels
                     R += exceedLuma * tmRatio;
                     G += exceedLuma * tmRatio;
                     B += exceedLuma * tmRatio;
                 }
-
-                if (_options.noiseTexture)
-                {
-                    float noiseAmount = _options.noiseAmount * 0.0003f;
-                    float noise = BLUE_NOISE_16x16[(x & 15)*16 + (y & 15)];
-                    noise = (noise - 127.5f) * noiseAmount;
-                    R *= (1.0 + noise);
-                    G *= (1.0 + noise);
-                    B *= (1.0 + noise);
-                }
+                
                 post.r = clamp_0_255(R);
                 post.g = clamp_0_255(G);
                 post.b = clamp_0_255(B);
@@ -1409,25 +1449,42 @@ struct rgba16_t
     ushort r, g, b, a;
 }
 
-// 16x16 Patch of 8-bit blue noise, tileable.
-private static immutable ubyte[256] BLUE_NOISE_16x16 =
+// 16x16 patch of 8-bit blue noise, tileable. 
+// This is used over the whole buffer.
+private static immutable ubyte[256] NOISE_16x16 =
 [
-    127, 194, 167,  79,  64, 173,  22,  83, 167, 105, 119, 250, 201,  34, 214, 145, 
-    233,  56,  13, 251, 203, 124, 243,  42, 216,  34,  73, 175, 133,  64, 185,  73, 
-    93, 156, 109, 144,  34,  98, 153, 138, 187, 238, 155,  46,  13, 102, 247,   0,
-    28, 180,  46, 218, 183,  13, 212,  69,  13,  92, 126, 228, 211, 161, 117, 197, 
-    134, 240, 121,  75, 234,  88,  53, 170, 109, 204,  59,  22,  86, 141,  38, 222,
-    81, 205,  13,  59, 160, 198, 129, 252,   0, 147, 176, 193, 244,  71, 173,  56,
-    22, 168, 104, 139,  22, 114,  38, 220, 101, 231,  77,  34, 113,  13, 189,  96, 
-    253, 148, 227, 190, 246, 174,  66, 155,  28,  50, 164, 131, 217, 151, 232, 128, 
-    115,  69,  34,  50,  93,  13, 209,  85, 192, 120, 248,  64,  90,  28, 208,  42,
-    0, 200, 215,  79, 125, 148, 239, 136, 181,  22, 206,  13, 185, 108,  59, 179,
-    90, 130, 159, 182, 235,  42, 106,   0,  56,  99, 226, 140, 157, 237,  77, 165, 
-    249,  28, 105,  13,  61, 170, 224,  75, 202, 163, 114,  81,  46,  22, 137, 223, 
-    189,  53, 219, 142, 196,  28, 122, 154, 254,  42,  28, 242, 196, 210, 119,  38, 
-    149,  86, 118, 245,  71,  96, 213,  13,  88, 178,  66, 129, 171,   0,  99,  69, 
-    178,  13, 207,  38, 159, 187,  50, 132, 236, 146, 191,  95,  53, 229, 163, 241,
-    46, 225, 102, 135,   0, 230, 110, 199,  61,   0, 221,  22, 150,  83, 112, 22
+    127, 194, 167,  79,  64, 173,  22,  83, 
+    167, 105, 119, 250, 201,  34, 214, 145, 
+    233,  56,  13, 251, 203, 124, 243,  42, 
+    216,  34,  73, 175, 133,  64, 185,  73, 
+     93, 156, 109, 144,  34,  98, 153, 138, 
+    187, 238, 155,  46,  13, 102, 247,   0,
+     28, 180,  46, 218, 183,  13, 212,  69,  
+     13,  92, 126, 228, 211, 161, 117, 197, 
+    134, 240, 121,  75, 234,  88,  53, 170, 
+    109, 204,  59,  22,  86, 141,  38, 222,
+     81, 205,  13,  59, 160, 198, 129, 252,  
+      0, 147, 176, 193, 244,  71, 173,  56,
+     22, 168, 104, 139,  22, 114,  38, 220, 
+    101, 231,  77,  34, 113,  13, 189,  96, 
+    253, 148, 227, 190, 246, 174,  66, 155,  
+     28,  50, 164, 131, 217, 151, 232, 128, 
+    115,  69,  34,  50,  93,  13, 209,  85,
+    192, 120, 248,  64,  90,  28, 208,  42,
+      0, 200, 215,  79, 125, 148, 239, 136, 
+    181,  22, 206,  13, 185, 108,  59, 179,
+     90, 130, 159, 182, 235,  42, 106,   0,  
+     56,  99, 226, 140, 157, 237,  77, 165, 
+    249,  28, 105,  13,  61, 170, 224,  75, 
+    202, 163, 114,  81,  46,  22, 137, 223, 
+    189,  53, 219, 142, 196,  28, 122, 154, 
+    254,  42,  28, 242, 196, 210, 119,  38, 
+    149,  86, 118, 245,  71,  96, 213,  13,  
+     88, 178,  66, 129, 171,   0,  99,  69, 
+    178,  13, 207,  38, 159, 187,  50, 132, 
+    236, 146, 191,  95,  53, 229, 163, 241,
+     46, 225, 102, 135,   0, 230, 110, 199,  
+     61,   0, 221,  22, 150,  83, 112, 22
 ];
 
 void* realloc_c17(void* p, size_t size) @system
@@ -1440,7 +1497,6 @@ void* realloc_c17(void* p, size_t size) @system
     return realloc(p, size);
 }
 
-
 rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
 {
     ubyte invAlpha = cast(ubyte)(~cast(int)alpha);
@@ -1450,6 +1506,16 @@ rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
     c.b = cast(ubyte) ( ( fg.b * alpha + bg.b * invAlpha ) / 255 );
     c.a = cast(ubyte) ( ( fg.a * alpha + bg.a * invAlpha ) / 255 );
     return c;
+}
+
+rgba16_t linearU16Premul(rgba_t c)
+{
+    rgba16_t res;
+    res.r = (c.r * c.r * c.a) >> 8;
+    res.g = (c.g * c.g * c.a) >> 8;
+    res.b = (c.b * c.b * c.a) >> 8;
+    res.a = (c.a * c.a * c.a) >> 8;
+    return res;
 }
 
 
@@ -1966,12 +2032,7 @@ private:
 
     void exitTag(const(char)[] tagName, int inputPos)
     {
-        if (tagName != "" && console.current.lastAppliedTag != tagName)
-        {
-            // ignore the error of mismatched name in closing tags (sorry)
-        }
-
-        // restore, but keep cursor position²
+        // restore, but keep cursor position
         int savedCol = console.current.ccol;
         int savedRow = console.current.crow;
         console.restore();
