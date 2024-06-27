@@ -396,14 +396,10 @@ nothrow:
         for (int entry = 0; entry < 16; ++entry)
         {
             uint col = PALETTE_DATA[palette][entry];
-            ubyte r = 0xff & (col >>> 16);
-            ubyte g = 0xff & (col >>> 8);
-            ubyte b = 0xff & col;
-
-            // Color 0 (default border color)
-            // is made transparent
-            ubyte a = entry == 0 ? 0 : 0xff;
-
+            ubyte r = 0xff & (col >>> 24);
+            ubyte g = 0xff & (col >>> 16);
+            ubyte b = 0xff & (col >>> 8);
+            ubyte a = 0xff & col;
             setPaletteEntry(entry, r, g, b, a);
         }
     }
@@ -842,7 +838,7 @@ private:
     // Palette
     rgba_t[16] _palette = 
     [
-        rgba_t(  0,   0,   0, 255), rgba_t(128,   0,   0, 255),
+        rgba_t(  0,   0,   0,   0), rgba_t(128,   0,   0, 255),
         rgba_t(  0, 128,   0, 255), rgba_t(128, 128,   0, 255),
         rgba_t(  0,   0, 128, 255), rgba_t(128,   0, 128, 255),
         rgba_t(  0, 128, 128, 255), rgba_t(192, 192, 192, 255),
@@ -1608,28 +1604,28 @@ rgba16_t linearU16Premul(rgba_t c)
 static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
 [
     // Vintaage
-    [ 0x000000, 0x800000, 0x008000, 0x808000,
-      0x000080, 0x800080, 0x008080, 0xc0c0c0,
-      0x808080, 0xff0000, 0x00ff00, 0xffff00,
-      0x0000ff, 0xff00ff, 0x00ffff, 0xffffff ],
+    [ 0x00000000, 0x800000ff, 0x008000ff, 0x808000ff,
+      0x000080ff, 0x800080ff, 0x008080ff, 0xc0c0c0ff,
+      0x808080ff, 0xff0000ff, 0x00ff00ff, 0xffff00ff,
+      0x0000ffff, 0xff00ffff, 0x00ffffff, 0xffffffff ],
 
     // Campbell
-    [ 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00,
-      0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
-      0x767676, 0xe74856, 0x16c60c, 0xf9f1a5,
-      0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2 ],
+    [ 0x0c0c0c00, 0xc50f1fff, 0x13a10eff, 0xc19c00ff,
+      0x0037daff, 0x881798ff, 0x3a96ddff, 0xccccccff,
+      0x767676ff, 0xe74856ff, 0x16c60cff, 0xf9f1a5ff,
+      0x3b78ffff, 0xb4009eff, 0x61d6d6ff, 0xf2f2f2ff ],
 
     // OneHalfLight
-    [ 0x383a42, 0xe45649, 0x50a14f, 0xc18301,
-      0x0184bc, 0xa626a4, 0x0997b3, 0xfafafa,
-      0x4f525d, 0xdf6c75, 0x98c379, 0xe4c07a,
-      0x61afef, 0xc577dd, 0x56b5c1, 0xffffff ],
+    [ 0x383a4200, 0xe45649ff, 0x50a14fff, 0xc18301ff,
+      0x0184bcff, 0xa626a4ff, 0x0997b3ff, 0xfafafaff,
+      0x4f525dff, 0xdf6c75ff, 0x98c379ff, 0xe4c07aff,
+      0x61afefff, 0xc577ddff, 0x56b5c1ff, 0xffffffff ],
 
     // Tango
-    [ 0x000000, 0xcc0000, 0x4e9a06, 0xc4a000,
-      0x3465a4, 0x75507b, 0x06989a, 0xd3d7cf,
-      0x555753, 0xef2929, 0x8ae234, 0xfce94f,
-      0x729fcf, 0xad7fa8, 0x34e2e2, 0xeeeeec ],
+    [ 0x00000000, 0xcc0000ff, 0x4e9a06ff, 0xc4a000ff,
+      0x3465a4ff, 0x75507bff, 0x06989aff, 0xd3d7cfff,
+      0x555753ff, 0xef2929ff, 0x8ae234ff, 0xfce94fff,
+      0x729fcfff, 0xad7fa8ff, 0x34e2e2ff, 0xeeeeecff ],
 ];
 
 alias TM_RangeFlags = int;
