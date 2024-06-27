@@ -101,7 +101,7 @@ with (console)
 
 
 
-TODO
+TO DOCUMENT
 - raw char data access
 - print some CCL text
 - tweak options
