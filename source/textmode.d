@@ -210,7 +210,7 @@ struct TM_Options
 
 
 /** 
-    Main API of the vintage-console library.
+    Main API of the text-mode library.
 
 
     3 mandatory calls:
@@ -219,6 +219,12 @@ struct TM_Options
         console.size(columns, rows);
         console.outbuf(buf.ptr, buf.w, buf.h, buf.pitchBytes);
         console.render();
+
+    All calls can be mixed and match without any ordering, except
+    that a call to 
+     the sequence:
+        getUpdateRect
+        TM_Rect dirty = console.
 
     Note: None of the `TM_Console` functions are thread-safe. Either
           call them single-threaded, or synchronize externally.
@@ -631,7 +637,7 @@ nothrow:
     /**
         Print text to console at current cursor position, encoded in
         the CCL language (same as in console-colors DUB package).
-        Text input MUST be UTF-8 or Unicode codepoint.
+        Text input MUST be UTF-8.
 
         Accepted tags:
         - <COLORNAME> such as:
@@ -644,7 +650,7 @@ nothrow:
 
         Unknown tags have no effect and are removed.
         Tags CAN'T have attributes.
-        Here, CCL is modified to be ALWAYS VALID.
+        Here, CCL is modified (vs console-colors) to be ALWAYS VALID.
 
         - STYLE tags, such as:
         <strong>, <b>, <u>, <blink>, <shiny>
@@ -985,7 +991,8 @@ private:
             _outScaleX = scale;
             _outScaleY = scale;
 
-            float filterSize = charW * scale * _options.blurScale * 2.5f;
+            float filterSize = charW * scale 
+                            * _options.blurScale * 2.5f;
             updateFilterSize( cast(int)(0.5f + filterSize) ); 
         }
     }
@@ -1387,7 +1394,8 @@ private:
         {
             rgba16_t* emitScan  = &_emit[_postWidth * y]; 
             
-            for (int x = updateRect.x1 - filter_2; x < updateRect.x2 + filter_2; ++x)
+            for (int x = updateRect.x1 - filter_2; 
+                     x < updateRect.x2 + filter_2; ++x)
             {  
                 int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
@@ -1415,7 +1423,8 @@ private:
             }
         }
 
-        for (int y = updateRect.y1 - filter_2; y < updateRect.y2 + filter_2; ++y)
+        for (int y = updateRect.y1 - filter_2; 
+                 y < updateRect.y2 + filter_2; ++y)
         {
             if (y < 0 || y >= _postHeight) 
                 continue;
@@ -1673,15 +1682,15 @@ const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
 static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
 [
     TM_FontDesc([8, 8], 
-    [ 
-        TM_UnicodeRange(0x0000, 0x0020, CONTROL_CHARS, TM_singleGlyph),
+    [
+        TM_UnicodeRange(0x0000, 0x0020, EMPTY, TM_singleGlyph),
         TM_UnicodeRange(0x0020, 0x0080, LOWER_ANSI)
+        // TODO, more characters
     ])
 ];
 
 
-// Note: not sure what font it is, dumped from BIOS memory years ago
-static immutable ubyte[8] CONTROL_CHARS =
+static immutable ubyte[8] EMPTY =
 [
     // All control chars have that same empty glyph
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -2073,7 +2082,8 @@ private:
             default:
                 {
                     bool bg = false;
-                    if ((tagName.length >= 3) && (tagName[0..3] == "on_"))
+                    if ((tagName.length >= 3) 
+                        && (tagName[0..3] == "on_"))
                     {
                         tagName = tagName[3..$];
                         bg = true;
@@ -2202,7 +2212,8 @@ private:
             next;
             if (!hasNextChar())
             {
-                // input terminate on "<", return end of input instead of error
+                // input terminate on "<", return end of input 
+                // instead of error
                 r.type = TokenType.endOfInput;
                 return r;
             }
@@ -2214,7 +2225,8 @@ private:
                 next;
                 if (!hasNextChar())
                 {
-                    // input terminate on "</", return end of input instead of error
+                    // input terminate on "</", return end of input 
+                    // instead of error
                     r.type = TokenType.endOfInput;
                     return r;
                 }
@@ -2266,7 +2278,8 @@ private:
                 {
                     tagName = charsSincePos(startOfTagName);
                     next;
-                    r.type = closeTag ? TokenType.tagClose : TokenType.tagOpen;
+                    r.type = closeTag ? TokenType.tagClose
+                                      : TokenType.tagOpen;
                     r.text = tagName;
                     return r;
                 }
@@ -2287,7 +2300,8 @@ private:
 
             // there was an error, terminate input
             {
-                // input terminate on "<", return end of input instead of error
+                // input terminate on "<", return end of input instead
+                // of error
                 r.type = TokenType.endOfInput;
                 return r;
             }
@@ -2301,14 +2315,14 @@ private:
                 // no error for no entity name
             }
 
-            int startOfEntity = inputPos;
+            int entStart = inputPos;
             while(hasNextChar())
             {
                 char ch = peek();
                 if (ch == ';')
                 {
-                    const(char)[] entityName = charsSincePos(startOfEntity);
-                    switch (entityName)
+                    const(char)[] entName = charsSincePos(entStart);
+                    switch (entName)
                     {
                         case "lt": r.text = "<"; break;
                         case "gt": r.text = ">"; break;
@@ -2321,7 +2335,8 @@ private:
                     r.type = TokenType.text;
                     return r;
                 }
-                else if ((ch >= 'a' && ch <= 'z') || (ch >= 'a' && ch <= 'z'))
+                else if ((ch >= 'a' && ch <= 'z') 
+                      || (ch >= 'a' && ch <= 'z')) // TODO suspicious
                 {
                     next;
                 }
@@ -2334,9 +2349,11 @@ private:
 
             nothing:
 
-            // do nothing, ignore an unrecognized entity or empty one, but terminate input
+            // do nothing, ignore an unrecognized entity or empty one, 
+            // but terminate input
             {
-                // input terminate on "<", return end of input instead of error
+                // input terminate on "<", return end of input instead
+                // of error
                 r.type = TokenType.endOfInput;
                 return r;
             }
