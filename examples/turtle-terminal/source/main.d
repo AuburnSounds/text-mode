@@ -7,6 +7,8 @@ int main(string[] args)
     return 0;
 }
 
+// Note: the "turtle" game engine now has a builtin text-mode console,
+// this is an example of how it could be integrated manually;
 class TermExample : TurtleGame
 {
     this()
@@ -16,7 +18,7 @@ class TermExample : TurtleGame
 
     override void load()
     {
-        setBackgroundColor(color("rgba(0, 0, 0, 0%)"));
+        setBackgroundColor(color("#222"));
         console.size(40, 22);
     }
 
@@ -36,11 +38,6 @@ class TermExample : TurtleGame
     override void draw()
     {
         ImageRef!RGBA fb = framebuffer();
-
-        
-        TM_Options options;
-        options.allowOutCaching = true; // doable because background color is set to transparent
-        console.options(options);
 
         console.palette(TM_Palette.campbell);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);

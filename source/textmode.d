@@ -165,7 +165,7 @@ struct TM_Options
     /// It is considered our changes are still there and not erased,
     /// unless the size of the buffer has changed, or its location.
     /// In this case we can draw less.
-    bool allowOutCaching   = true;
+    bool allowOutCaching   = false;
 
     /// Palette color of the borderColor;
     ubyte borderColor      = 0;
@@ -399,7 +399,11 @@ nothrow:
             ubyte r = 0xff & (col >>> 16);
             ubyte g = 0xff & (col >>> 8);
             ubyte b = 0xff & col;
-            ubyte a = 0xff;
+
+            // Color 0 (default border color)
+            // is made transparent
+            ubyte a = entry == 0 ? 0 : 0xff;
+
             setPaletteEntry(entry, r, g, b, a);
         }
     }
