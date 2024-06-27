@@ -256,6 +256,7 @@ nothrow:
     {
         updateTextBufferSize(columns, rows);
         updateBackBufferSize();
+        cls();
     }
     ///ditto
     int[2] size() pure const
@@ -604,8 +605,7 @@ nothrow:
     {
         // Set all char data to grey space
         _text[] = TM_CharData.init;
-        current.ccol = 0;
-        current.crow = 0;
+        current = State.init;
         _dirtyValidation = true;
     }
     ///ditto
@@ -897,7 +897,7 @@ private:
         TM_Style style = 0;
 
         // for the CCL interpreter
-        int inputPos; // position of the opening tag in input chars.
+        int inputPos   = 0; // pos of opening tag in input chars
     }
 
     enum STATE_STACK_DEPTH = 32;
@@ -975,21 +975,21 @@ private:
         int charMarginX = 0; // not implemented
         int charMarginY = 0; // not implemented
 
-        if (_outMarginLeft != marginLeft
-            || _outMarginTop != marginTop
-            || _charMarginX != charMarginX
-            || _charMarginY != charMarginY 
-            || _outScaleX != scale
-            || _outScaleY != scale)
+        if (   _outMarginLeft != marginLeft
+            || _outMarginTop  != marginTop
+            || _charMarginX   != charMarginX
+            || _charMarginY   != charMarginY 
+            || _outScaleX     != scale
+            || _outScaleY     != scale)
         {
-            _dirtyOut = true;
-            _dirtyPost = true;
+            _dirtyOut      = true;
+            _dirtyPost     = true;
             _outMarginLeft = marginLeft;
-            _outMarginTop = marginTop;
-            _charMarginX = charMarginX;
-            _charMarginY = charMarginY;
-            _outScaleX = scale;
-            _outScaleY = scale;
+            _outMarginTop  = marginTop;
+            _charMarginX   = charMarginX;
+            _charMarginY   = charMarginY;
+            _outScaleX     = scale;
+            _outScaleY     = scale;
 
             float filterSize = charW * scale 
                             * _options.blurScale * 2.5f;
@@ -1025,8 +1025,8 @@ private:
         r.x2 += filter_2;
         r.y1 -= filter_2;
         r.y2 += filter_2;
-        if (r.x1 < 0) r.x1 = 0;
-        if (r.y1 < 0) r.y1 = 0;
+        if (r.x1 <     0) r.x1 = 0;
+        if (r.y1 <     0) r.y1 = 0;
         if (r.x2 > _outW) r.x2 = _outW;
         if (r.y2 > _outH) r.y2 = _outH;
         return r;
@@ -1051,7 +1051,6 @@ private:
             _rows    = rows;
             _dirtyAllChars = true;
         }
-        _text[] = TM_CharData.init;
     }
 
     void updateBackBufferSize() @trusted

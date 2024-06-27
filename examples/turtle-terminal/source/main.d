@@ -17,7 +17,7 @@ class TermExample : TurtleGame
     override void load()
     {
         setBackgroundColor(color("rgba(0, 0, 0, 0%)"));
-        console.size(40, 21);
+        console.size(40, 22);
     }
 
     override void mouseMoved(float x, float y, float dx, float dy)
@@ -30,46 +30,6 @@ class TermExample : TurtleGame
     override void update(double dt)
     {
         if (keyboard.isDown("escape")) exitGame();
-
-
-            if (keyboard.isDown("space"))
-            with(console)
-            {
-                for (int i = 0; i < 256; ++i)
-                {
-                    fg(i & 15);
-                    bg(cast(ubyte)(i >>> 4));
-                    string s;
-                    s ~= cast(char)i;
-                    print(s);
-                }
-            }
-
-         {
-           
-        }
-        
-         with(console)
-         {
-            for (int i = 0; i < 1; ++i)
-            {
-                int col = cast(int) randNormal(80/2, 40);
-                int row = cast(int) randNormal(25/2, 12);
-                int cfg = (cast(int) randNormal(0, 100)) & 15;
-                int cbg = (cast(int) randNormal(0, 100)) & 15;
-                if (row >= 20)
-                    continue;
-                  fg(cfg);
-                //  bg(cbg);
-                int ch = (cast(int) randNormal(0, 1000)) & 255;   
-               // if (ch < 10)
-                {
-                    locate(col, row);
-                    //print(cast(char)ch);
-                    cprint("<shiny><white>white</yellow><lblue>lblue</lblue> <lred>red</lred><lgreen>green</lgreen></shiny>");
-                }
-            }
-         }
     }
 
     int ntimes;
@@ -77,16 +37,52 @@ class TermExample : TurtleGame
     {
         ImageRef!RGBA fb = framebuffer();
 
+        
+        TM_Options options;
+        options.allowOutCaching = true; // doable because background color is set to transparent
+        console.options(options);
+
+        console.palette(TM_Palette.campbell);
+        console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
+
         with (console)
         {
-            TM_Options options;
-            options.allowOutCaching = true; // doable because background color is set to transparent
-            options.borderColor = 0;
-            options.borderShiny = false;
-            console.options(options);
-            console.palette(TM_Palette.campbell);
+            cls();
 
-            console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
+            print("Hello world! ");
+            println("Same, with line feed");
+
+            // Save state (colors, style, cursor position)
+            save();
+
+            // Change foreground color (0 to 15)
+            fg(TM_red);
+            print("This is red text ");
+            bg(TM_blue);
+            println("on blue background");
+
+            // Restore state. Warning: this restore cursor position!
+            restore();
+
+            // Set text cursor position (where text is drawn next)
+            locate(7, 5);
+
+            // There are 3 implemented styles:
+            //   - bold
+            //   - shiny (sort of bloom)
+            //   - underline
+            style(TM_bold);
+            println("This is bold");
+
+            style(TM_shiny);
+            print("This is ");
+            fg(14);
+            println("shiny");
+
+            style(TM_underline);
+             fg(TM_lgreen);
+            println("This is underline");
+
             render();
         }
     } 
