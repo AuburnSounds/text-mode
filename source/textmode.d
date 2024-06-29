@@ -1013,6 +1013,12 @@ private:
         r.x2 += _outMarginLeft;
         r.y1 += _outMarginTop;
         r.y2 += _outMarginTop;
+
+        // Need to clamp, coords may be out of buffer if said buffer is small
+        if (r.x1 > _outW) r.x1 = _outW;
+        if (r.x2 > _outW) r.x2 = _outW;
+        if (r.y1 > _outH) r.y1 = _outH;
+        if (r.y2 > _outH) r.y2 = _outH;
         return r;
     }
 
