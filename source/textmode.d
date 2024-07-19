@@ -811,6 +811,45 @@ nothrow:
         return extendByFilterWidth(r);
     }
 
+
+    /** 
+        Convert pixel position to character position.
+        Which character location is at pixel x,y ?
+
+        Returns: `true` if a character is pointed at, else `false`.
+                 If no hit, `*col` and `*row` are left unchanged.
+    */
+    bool hit(int x, int y, int* column, int* row)
+    {
+        // No layout yet
+        if (_outScaleX == -1 || _outScaleY == -1)
+            return false;
+
+        int dx = (x - _outMarginLeft);
+        int dy = (y - _outMarginTop);
+        if (dx < 0 || dy < 0)
+            return false;
+        int cw = charWidth() * _outScaleX;
+        int ch = charHeight() * _outScaleY;
+        assert(_outScaleX > 0);
+        assert(_outScaleY > 0);
+        assert(cw >= 0);
+        assert(ch >= 0);
+        dx = dx / cw;
+        dy = (dy + ch - 1) / ch;
+        assert(dx >= 0 && dy >= 0);
+        if (dx < 0 || dy < 0 || dx >= _columns || dy >= rows)
+            return false;
+        *column = dx;
+        *row    = dy;
+        return true;
+    }
+    ///ditto
+    bool hit(double x, double y, int* column, int* row)
+    {
+        return hit(cast(int)x, cast(int)y, column, row);
+    }
+
     // </dirty rectangles> 
 
 
