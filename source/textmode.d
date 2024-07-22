@@ -806,6 +806,8 @@ nothrow:
         recomputeLayout();
 
         TM_Rect r = transformRectToOutputCoord(textRect);
+        if (r.isEmpty)
+            return r;
 
         // extend it to account for blur
         return extendByFilterWidth(r);
@@ -1429,6 +1431,9 @@ private:
             updateRect = TM_Rect(0, 0, _outW, _outH);
             _dirtyBlur = false;
         }
+
+        if (updateRect.isEmpty)
+            return;
 
         int filter_2 = _filterWidth / 2;
 
