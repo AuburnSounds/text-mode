@@ -51,6 +51,10 @@ enum : TM_Color
 */
 static struct TM_CharData
 {
+nothrow:
+@nogc:
+@safe:
+
     /// Unicode codepoint to represent. This library doesn't 
     /// compose codepoints.
     dchar glyph     = 32;
@@ -74,9 +78,7 @@ enum : TM_Style
     TM_shiny     = 1, /// <shiny>, emissive light
     TM_bold      = 2, /// <b> or <strong>, pixels are 2x1
     TM_underline = 4, /// <u>, lowest row is filled
-
-    // NOT IMPLEMENTED YET:    
-    TM_blink     = 8, /// <blink>, not implemented
+    TM_blink     = 8, /// <blink>, need to call console.update(dt)
 }
 
 /**
@@ -172,6 +174,9 @@ struct TM_Options
 
     /// Is the border color itself <shiny>?
     bool borderShiny       = false;
+
+    /// The <blink> time in milliseconds.
+    double blinkTime = 1200;
 
 
     // <blur>
@@ -763,6 +768,30 @@ nothrow:
         postToOut(textRect);
     }
 
+    /**
+        Make time progress, so that <blink> does blink.
+        Give it your frame's delta time, in seconds.
+    */
+    void update(double deltaTimeSeconds)
+    {
+        double blinkTimeSecs = _options.blinkTime * 0.001;
+
+        // prevent large pause making screen updates
+        // since it means we already struggle
+        if (deltaTimeSeconds > blinkTimeSecs)
+            deltaTimeSeconds = blinkTimeSecs;
+
+        double time = _elapsedTime;
+        time += deltaTimeSeconds;
+        _blinkOn = time < blinkTimeSecs * 0.5;
+        if (_cachedBlinkOn != _blinkOn)
+            _dirtyValidation = true;
+        time = time % blinkTimeSecs;
+        if (time < 0) 
+            time = 0;
+        _elapsedTime = time;
+    }
+ 
     // <dirty rectangles> 
 
     /**
@@ -875,6 +904,10 @@ private:
     TM_CharData[] _text  = null; // text buffer
     TM_CharData[] _cache = null; // same but cached
     bool[] _charDirty = null; // true if char need redraw in _back
+
+    double _elapsedTime = 0; // Time elapsed, to compute blink
+    bool _blinkOn; // Is <blink> text visible at this point in time?
+    bool _cachedBlinkOn;
 
     // Palette
     rgba_t[16] _palette = 
@@ -1157,6 +1190,7 @@ private:
     //  - their fg or bg color changed
     //  - their fg or bg color PALETTE changed
     //  - glyph displayed changed
+    //  - character is <blink> and time passed
     //  - font changed
     //  - size changed
     //
@@ -1192,6 +1226,7 @@ private:
                     int icell = col + row * _columns;
                     TM_CharData text  =  _text[icell];
                     TM_CharData cache =  _cache[icell];
+                    bool blink = (text.style & TM_shiny) != 0;
                     bool redraw = false;
                     if (text != cache)
                         redraw = true; // chardata changed
@@ -1199,6 +1234,8 @@ private:
                         redraw = true; // fg color changed
                     else if (_paletteDirty[text.color >>> 4])
                         redraw = true; // bg color changed
+                    else if (blink && (_cachedBlinkOn != _blinkOn))
+                        redraw = true; // text blinked on or off
                     if (redraw)
                     {
                         if (bounds.x1 > col  ) bounds.x1 = col;
@@ -1216,6 +1253,7 @@ private:
             }
         }
         _lastBounds = bounds;
+        _cachedBlinkOn = _blinkOn;
         return bounds;
     }
 
@@ -1389,8 +1427,9 @@ private:
         rgba_t bgCol = _palette[ cdata.color >>> 4 ];
         const(ubyte)[] glyphData = getGlyphData(_font, cdata.glyph);
         assert(glyphData.length == 8);
-        bool bold      = (cdata.style & TM_bold) != 0;
+        bool bold      = (cdata.style & TM_bold     ) != 0;
         bool underline = (cdata.style & TM_underline) != 0;
+        bool blink     = (cdata.style & TM_blink    ) != 0;
         for (int y = 0; y < ch; ++y)
         {
             const int yback = row * ch + y;
@@ -1401,6 +1440,9 @@ private:
 
             if (bold)
                 bits |= (bits >> 1);
+
+            if (blink && !_blinkOn)
+                bits = 0;
 
             int idx = (_columns * cw) * yback + (col * cw);
             rgba_t* pixels = &_back[idx];

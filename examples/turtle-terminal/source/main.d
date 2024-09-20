@@ -31,6 +31,7 @@ class TermExample : TurtleGame
 
     override void update(double dt)
     {
+        console.update(dt);
         if (keyboard.isDown("escape")) exitGame();
     }
 
@@ -74,7 +75,10 @@ class TermExample : TurtleGame
             style(TM_shiny);
             print("This is ");
             fg(14);
-            println("shiny");
+            print("shiny");
+
+            style(TM_shiny | TM_blink);
+            println(" and blinking");
 
             style(TM_underline);
              fg(TM_lgreen);
