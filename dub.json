@@ -3,5 +3,9 @@
     "license": "BSL-1.0",
     "description": "Fast virtual text mode with 8x8 Unicode font.",
     "importPaths": ["source"],
-    "sourcePaths": ["source"]
+    "sourcePaths": ["source"],
+    "dependencies":
+    {
+        "intel-intrinsics": "~>1.0"
+    }
 }

@@ -8,6 +8,8 @@ import core.stdc.stdlib: realloc, free;
 import std.utf: byDchar;
 import std.math: abs, exp, sqrt;
 
+import inteli.smmintrin;
+
 nothrow:
 @nogc:
 @safe:
@@ -1491,7 +1493,8 @@ private:
                 int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
                     continue;
-                float r = 0, g = 0, b = 0;
+                __m128 mmRGBA = _mm_setzero_ps();
+
                 float[] kernel = _blurKernel;
                 for (int n = -filter_2; n <= filter_2; ++n)
                 {
@@ -1499,18 +1502,18 @@ private:
                     if (xe < 0 || xe >= _postWidth) 
                         continue;
                     rgba16_t emit = emitScan[xe];
+                    __m128i mmEmit = _mm_setr_epi32(emit.r, emit.g, emit.b, emit.a);
                     float factor = _blurKernel[filter_2 + n];
-                    r += emit.r * factor;
-                    g += emit.g * factor;
-                    b += emit.b * factor;
+                    mmRGBA = mmRGBA + _mm_cvtepi32_ps(mmEmit) * _mm_set1_ps(factor);
                 }
 
                 // store result transposed in _emitH
                 // for faster convolution in Y afterwards
                 rgba16_t* emitH = &_emitH[_postHeight * x + y];
-                emitH.r = cast(ushort)r;
-                emitH.g = cast(ushort)g;
-                emitH.b = cast(ushort)b;
+                __m128i mmRes = _mm_cvttps_epi32(mmRGBA);
+                
+                mmRes = _mm_packus_epi32(mmRes, mmRes);
+                _mm_storeu_si64(emitH, mmRes);
             }
         }
 
@@ -1527,9 +1530,8 @@ private:
                      x < updateRect.x2 + filter_2; ++x)
             {
                 // blur vertically
-                float blurR = 0, 
-                      blurG = 0, 
-                      blurB = 0;
+                __m128 mmBlur = _mm_setzero_ps();
+
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
 
@@ -1542,9 +1544,8 @@ private:
                     if (ye >= _postHeight) continue;
                     rgba16_t emitH = emitHScan[ye];
                     float factor = _blurKernel[filter_2 + n];
-                    blurR += emitH.r * factor;
-                    blurG += emitH.g * factor;
-                    blurB += emitH.b * factor;
+                    __m128i mmEmit = _mm_setr_epi32(emitH.r, emitH.g, emitH.b, emitH.a);
+                    mmBlur = mmBlur + _mm_cvtepi32_ps(mmEmit) * _mm_set1_ps(factor);
                 }
 
                 static ubyte clamp_0_255(float t) pure
@@ -1560,9 +1561,7 @@ private:
                     return a < b ? a : b;
                 }
 
-                blurR = sqrt(blurR);
-                blurG = sqrt(blurG);
-                blurB = sqrt(blurB);
+                mmBlur = _mm_sqrt_ps(mmBlur);
 
                 if (_options.noiseTexture)
                 {
@@ -1571,18 +1570,18 @@ private:
                     float noiseAmount = _options.noiseAmount * NSCALE;
                     float noise = NOISE_16x16[(x & 15)*16 + (y & 15)];
                     noise = (noise - 127.5f) * noiseAmount;
-                    blurR *= (1.0 + noise);
-                    blurG *= (1.0 + noise);
-                    blurB *= (1.0 + noise);
+                    mmBlur = mmBlur * (1.0f + noise);
                 }
+
+                // PERF: could be improved with SIMD below
 
                 float BLUR_AMOUNT = _options.blurAmount;
 
                 // Add blur
                 rgba_t post = postScan[x];
-                float R = post.r + blurR * BLUR_AMOUNT;
-                float G = post.g + blurG * BLUR_AMOUNT;
-                float B = post.b + blurB * BLUR_AMOUNT;
+                float R = post.r + mmBlur.array[0] * BLUR_AMOUNT;
+                float G = post.g + mmBlur.array[1] * BLUR_AMOUNT;
+                float B = post.b + mmBlur.array[2] * BLUR_AMOUNT;
 
                 if (_options.tonemapping)
                 {
@@ -1601,7 +1600,7 @@ private:
                     G += exceedLuma * tmRatio;
                     B += exceedLuma * tmRatio;
                 }
-                
+
                 post.r = clamp_0_255(R);
                 post.g = clamp_0_255(G);
                 post.b = clamp_0_255(B);
