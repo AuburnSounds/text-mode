@@ -21,10 +21,13 @@ nothrow @nogc @safe:
     2D rectangle, int coordinates.
 */
 struct rect_t {
+nothrow @nogc @safe:
     int left;
     int top;
     int right;
     int bottom;
+
+    bool isEmpty() { return rectIsEmpty(this); }
 }
 
 
@@ -160,6 +163,24 @@ rect_t rectMerge(const(rect_t) a, const(rect_t) b) {
 }
 
 /**
+    Returns: Rectangle that encloses both `a` and point `x`,`y`.
+*/
+rect_t rectMergeWithPoint(const(rect_t) a, int x, int y) {
+    assert(rectIsSorted(a));
+    if (rectIsEmpty(a)) {
+        return rect_t(x, y, x+1, y+1);
+    }
+    else {
+        rect_t r = a;
+        if (r.left    > x  ) r.left   = x;
+        if (r.top     > y  ) r.top    = y;
+        if (r.right   < x+1) r.right  = x+1;
+        if (r.bottom  < y+1) r.bottom = y+1;
+        return r;
+    }
+}
+
+/**
     Returns: `true` if none of the rectangles overlap with each 
     other. VERY INEFFICIENT, keep it for debug purpose.
 */
@@ -171,6 +192,31 @@ bool rectHaveNoOverlap(const(rect_t)[] rects) {
                 return false;
     }
     return true;
+}
+
+
+/**
+    Returns: A translated rectangle by dx, dy.
+*/
+rect_t rectTranslate(rect_t r, int dx, int dy) {
+    r.right   += dx;
+    r.left    += dx;
+    r.top     += dy;
+    r.bottom  += dy;
+    return r;
+}
+
+
+/**
+    Returns: This rectangle, extended on all sides by the given 
+    amount.
+*/
+rect_t rectGrow(rect_t r, int amount) {
+    r.left   -= amount;
+    r.right  += amount;
+    r.top    -= amount;
+    r.bottom += amount;
+    return r;
 }
 
 

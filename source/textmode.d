@@ -97,30 +97,6 @@ enum TM_Palette
     tango,        ///
 }
 
-/**
-    Rectangle.
-    Note: in vintage-console, rectangles exist in:
-    - text space (0,0)-(columns x rows)
-    - post/blur/output space (0,0)-(outW x outH)
-*/
-struct TM_Rect
-{
-
-nothrow:
-@nogc:
-@safe:
-pure:
-    int x1; ///
-    int y1; ///
-    int x2; ///
-    int y2; ///
-
-    bool isEmpty() const
-    {
-        return x1 == x2 || y1 == y2;
-    }
-}
-
 /// Selected vintage font.
 /// There is only one font, our goal it provide a Unicode 8x8 
 /// font suitable for most languages, so others were removed. 
@@ -737,7 +713,7 @@ nothrow:
     {
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
-        TM_Rect textRect = invalidateChars();
+        rect_t textRect = invalidateChars();
 
         // 1. Draw chars in original size, only those who changed.
         drawAllChars(textRect);
@@ -758,7 +734,7 @@ nothrow:
         // Borders are drawn if _dirtyPost is true.
         // _dirtyPost get cleared after that.
         // Return rectangle that changed
-        TM_Rect postRect = backToPost(textRect);
+        rect_t postRect = backToPost(textRect);
 
         // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
@@ -808,8 +784,7 @@ nothrow:
      */
     bool hasPendingUpdate()
     {
-        TM_Rect r = getUpdateRect();
-        return (r.x2 - r.x1) != 0 && (r.y2 - r.y1) != 0;
+        return ! rectIsEmpty(getUpdateRect());
     }
 
     /**
@@ -825,21 +800,21 @@ nothrow:
         Note: In case of nothing to redraw, it's width and height 
               will be zero. Better use `hasPendingUpdate()`.
     */
-    TM_Rect getUpdateRect()
+    rect_t getUpdateRect()
     {
         if (_dirtyOut || (!_options.allowOutCaching) )
         {
-            return TM_Rect(0, 0, _outW, _outH);
+            return rectWithCoords(0, 0, _outW, _outH);
         }
 
-        TM_Rect textRect = invalidateChars();
+        rect_t textRect = invalidateChars();
 
         if (textRect.isEmpty)
-            return TM_Rect(0, 0, 0, 0);
+            return rectWithCoords(0, 0, 0, 0);
 
         recomputeLayout();
 
-        TM_Rect r = transformRectToOutputCoord(textRect);
+        rect_t r = transformRectToOutputCoord(textRect);
         if (r.isEmpty)
             return r;
 
@@ -933,7 +908,7 @@ private:
     bool _dirtyOut        = true;
 
     bool[16] _paletteDirty; // true if this color changed
-    TM_Rect  _lastBounds;   // last computed dirty rectangle
+    rect_t  _lastBounds;   // last computed dirty rectangle
 
     // Size of bitmap backing buffer.
     // In _back and _backFlags buffer, every character is rendered 
@@ -1081,42 +1056,30 @@ private:
 
     // r is in text console coordinates
     // transform it in pixel coordinates
-    TM_Rect transformRectToOutputCoord(TM_Rect r)
+    rect_t transformRectToOutputCoord(rect_t r)
     {
-        if (r.isEmpty)
+        if (rectIsEmpty(r))
             return r;
         int cw = charWidth();
         int ch = charHeight();
-        r.x1 *= cw * _outScaleX; 
-        r.x2 *= cw * _outScaleX;
-        r.y1 *= ch * _outScaleY; 
-        r.y2 *= ch * _outScaleY;
-        r.x1 += _outMarginLeft;
-        r.x2 += _outMarginLeft;
-        r.y1 += _outMarginTop;
-        r.y2 += _outMarginTop;
+        r.left   *= cw * _outScaleX; 
+        r.right  *= cw * _outScaleX;
+        r.top    *= ch * _outScaleY; 
+        r.bottom *= ch * _outScaleY;
+        r = rectTranslate(r, _outMarginLeft, _outMarginTop);
+        return rectIntersection(r, rectOutput());
+    }
 
-        // Need to clamp, coords may be out of buffer if said buffer is small
-        if (r.x1 > _outW) r.x1 = _outW;
-        if (r.x2 > _outW) r.x2 = _outW;
-        if (r.y1 > _outH) r.y1 = _outH;
-        if (r.y2 > _outH) r.y2 = _outH;
-        return r;
+    rect_t rectOutput()
+    {
+        return rect_t(0, 0, _outW, _outH);
     }
 
     // extend rect in output coordinates, by filter radius
-
-    TM_Rect extendByFilterWidth(TM_Rect r)
+    rect_t extendByFilterWidth(rect_t r)
     {
-        int filter_2 = _filterWidth / 2;
-        r.x1 -= filter_2;
-        r.x2 += filter_2;
-        r.y1 -= filter_2;
-        r.y2 += filter_2;
-        if (r.x1 <     0) r.x1 = 0;
-        if (r.y1 <     0) r.y1 = 0;
-        if (r.x2 > _outW) r.x2 = _outW;
-        if (r.y2 > _outH) r.y2 = _outH;
+        r = rectGrow(r, _filterWidth / 2);
+        r = rectIntersection(r, rectOutput());
         return r;
     }
 
@@ -1213,7 +1176,7 @@ private:
     //  - size changed
     //
     // Returns: A rectangle that needs to change, in text coordinates.
-    TM_Rect invalidateChars()
+    rect_t invalidateChars()
     {
         // validation results might not need to be recomputed
         if (!_dirtyValidation)
@@ -1221,19 +1184,12 @@ private:
 
         _dirtyValidation = false;
 
-        TM_Rect bounds;
-        bounds.x1 = _columns+1;
-        bounds.y1 = _rows+1;
-        bounds.x2 = -1;
-        bounds.y2 = -1;
+        rect_t bounds;
 
         if (_dirtyAllChars)
         {
             _charDirty[] = true;
-            bounds.x1 = 0;
-            bounds.y1 = 0;
-            bounds.x2 = _columns;
-            bounds.y2 = _rows;
+            bounds = rectWithCoords(0, 0, _columns, _rows);
         }
         else
         {
@@ -1256,18 +1212,10 @@ private:
                         redraw = true; // text blinked on or off
                     if (redraw)
                     {
-                        if (bounds.x1 > col  ) bounds.x1 = col;
-                        if (bounds.y1 > row  ) bounds.y1 = row;
-                        if (bounds.x2 < col+1) bounds.x2 = col+1;
-                        if (bounds.y2 < row+1) bounds.y2 = row+1;
+                        bounds = rectMergeWithPoint(bounds, col, row);
                     }
                     _charDirty[icell] = redraw;
                 }
-            }
-            // make rect empty if nothing found
-            if (bounds.x2 == -1)
-            {
-                bounds = TM_Rect(0, 0, 0, 0);
             }
         }
         _lastBounds = bounds;
@@ -1276,11 +1224,11 @@ private:
     }
 
     // Draw all chars from _text to _back, no caching yet
-    void drawAllChars(TM_Rect textRect)
+    void drawAllChars(rect_t textRect)
     { 
-        for (int row = textRect.y1; row < textRect.y2; ++row)
+        for (int row = textRect.top; row < textRect.bottom; ++row)
         { 
-            for (int col = textRect.x1; col < textRect.x2; ++col)
+            for (int col = textRect.left; col < textRect.right; ++col)
             { 
                 if (_charDirty[col + _columns * row]) 
                     drawChar(col, row); 
@@ -1290,11 +1238,11 @@ private:
 
     // Draw from _back/_backFlags to _post/_emit
     // Returns changed rect, in pixels
-    TM_Rect backToPost(TM_Rect textRect) @trusted
+    rect_t backToPost(rect_t textRect) @trusted
     {
         bool drawBorder = false;
 
-        TM_Rect postRect = transformRectToPostCoord(textRect);
+        rect_t postRect = transformRectToPostCoord(textRect);
 
         if (_dirtyPost)
         {
@@ -1316,14 +1264,14 @@ private:
             else
                 _emit[] = rgba16_t(0, 0, 0, 0);
 
-            postRect = TM_Rect(0, 0, _postWidth, _postHeight);
-            textRect = TM_Rect(0, 0, _columns, _rows);
+            postRect = rectWithCoords(0, 0, _postWidth, _postHeight);
+            textRect = rectWithCoords(0, 0, _columns, _rows);
         }
 
         // Which chars to copy, with scale and margins applied?
-        for (int row = textRect.y1; row < textRect.y2; ++row)
+        for (int row = textRect.top; row < textRect.bottom; ++row)
         {
-            for (int col = textRect.x1; col < textRect.x2; ++col)
+            for (int col = textRect.left; col < textRect.right; ++col)
             {
                 int charIndex = col + _columns * row;
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
@@ -1392,9 +1340,9 @@ private:
     }
 
     // Draw from _post to _out
-    void postToOut(TM_Rect textRect) @trusted
+    void postToOut(rect_t textRect) @trusted
     {
-        TM_Rect changeRect = transformRectToOutputCoord(textRect);
+        rect_t changeRect = transformRectToOutputCoord(textRect);
 
         // Extend it to account for blur
         changeRect = extendByFilterWidth(changeRect);
@@ -1403,16 +1351,16 @@ private:
         {
             // No caching-case, redraw everything we now from _post.
             // The buffer content wasn't preserved, so we do it again.
-            changeRect = TM_Rect(0, 0, _outW, _outH); 
+            changeRect = rectWithCoords(0, 0, _outW, _outH); 
         }
 
-        for (int y = changeRect.y1; y < changeRect.y2; ++y)
+        for (int y = changeRect.top; y < changeRect.bottom; ++y)
         {
             const(rgba_t)* postScan = &_final[_postWidth * y];
             rgba_t*         outScan = cast(rgba_t*)(_outPixels 
                                                      + _outPitch * y);
 
-            for (int x = changeRect.x1; x < changeRect.x2; ++x)
+            for (int x = changeRect.left; x < changeRect.right; ++x)
             {
                 // Read one pixel, make potentially several in output
                 // with nearest resampling
@@ -1484,11 +1432,11 @@ private:
 
     // copy _post to _final (same space)
     // _final is _post + filtered _emissive
-    void applyBlur(TM_Rect updateRect) @trusted
+    void applyBlur(rect_t updateRect) @trusted
     {
         if (_dirtyBlur)
         {
-            updateRect = TM_Rect(0, 0, _outW, _outH);
+            updateRect = rectWithCoords(0, 0, _outW, _outH);
             _dirtyBlur = false;
         }
 
@@ -1499,12 +1447,12 @@ private:
 
         // blur emissive horizontally, from _emit to _emitH
         // the updated area is updateRect enlarged horizontally.
-        for (int y = updateRect.y1; y < updateRect.y2; ++y)
+        for (int y = updateRect.top; y < updateRect.bottom; ++y)
         {
             rgba16_t* emitScan  = &_emit[_postWidth * y]; 
             
-            for (int x = updateRect.x1 - filter_2; 
-                     x < updateRect.x2 + filter_2; ++x)
+            for (int x = updateRect.left - filter_2; 
+                     x < updateRect.right + filter_2; ++x)
             {  
                 int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
@@ -1533,16 +1481,16 @@ private:
             }
         }
 
-        for (int y = updateRect.y1 - filter_2; 
-                 y < updateRect.y2 + filter_2; ++y)
+        for (int y = updateRect.top - filter_2; 
+                 y < updateRect.bottom + filter_2; ++y)
         {
             if (y < 0 || y >= _postHeight) 
                 continue;
  
             rgba32f_t*       blurScan = &_blur[_postWidth * y];
             
-            for (int x = updateRect.x1 - filter_2; 
-                     x < updateRect.x2 + filter_2; ++x)
+            for (int x = updateRect.left - filter_2; 
+                     x < updateRect.right + filter_2; ++x)
             {
                 // blur vertically
                 __m128 mmBlur = _mm_setzero_ps();
@@ -1577,11 +1525,11 @@ private:
         }
     }
 
-    void applyEffects(TM_Rect updateRect) @trusted
+    void applyEffects(rect_t updateRect) @trusted
     {
         if (_dirtyFinal)
         {
-            updateRect = TM_Rect(0, 0, _outW, _outH);
+            updateRect = rectWithCoords(0, 0, _outW, _outH);
             _dirtyFinal = false;
         }
 
@@ -1590,8 +1538,8 @@ private:
 
         int filter_2 = _filterWidth / 2;
 
-        for (int y = updateRect.y1 - filter_2; 
-                y < updateRect.y2 + filter_2; ++y)
+        for (int y = updateRect.top - filter_2; 
+                y < updateRect.bottom + filter_2; ++y)
         {
             if (y < 0 || y >= _postHeight) 
                 continue;
@@ -1600,8 +1548,8 @@ private:
             const(rgba32f_t)* blurScan = &_blur[_postWidth * y];
             rgba_t*           finalScan = &_final[_postWidth * y];
 
-            for (int x = updateRect.x1 - filter_2; 
-                     x < updateRect.x2 + filter_2; ++x)
+            for (int x = updateRect.left - filter_2; 
+                     x < updateRect.right + filter_2; ++x)
             {
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
