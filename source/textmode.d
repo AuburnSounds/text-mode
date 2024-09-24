@@ -713,10 +713,10 @@ nothrow:
     {
         // 0. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
-        rect_t textRect = invalidateChars();
+        rect_t[2] textRect = invalidateChars();
 
         // 1. Draw chars in original size, only those who changed.
-        drawAllChars(textRect);
+        drawAllChars(textRect[0]);
 
         // from now on, consider _text and _back is up-to-date.
         // this information of recency is still in textRect and 
@@ -734,19 +734,19 @@ nothrow:
         // Borders are drawn if _dirtyPost is true.
         // _dirtyPost get cleared after that.
         // Return rectangle that changed
-        rect_t postRect = backToPost(textRect);
+        rect_t[2] postRect = backToPost(textRect);
 
         // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
 
         // 3. Blur go here.
-        applyBlur(postRect); // PERF: gives least amount of update rectangles
+        applyBlur(postRect[1]); // PERF: gives least amount of update rectangles
 
         // 4. Other effects. Screen simulation, etc.
-        applyEffects(postRect);
+        applyEffects(postRect[0]);
 
         // 5. Blend into out buffer.
-        postToOut(textRect);
+        postToOut(textRect[0]);
     }
 
     /**
@@ -807,14 +807,14 @@ nothrow:
             return rectWithCoords(0, 0, _outW, _outH);
         }
 
-        rect_t textRect = invalidateChars();
+        rect_t[2] textRect = invalidateChars();
 
-        if (textRect.isEmpty)
+        if (textRect[0].isEmpty)
             return rectWithCoords(0, 0, 0, 0);
 
         recomputeLayout();
 
-        rect_t r = transformRectToOutputCoord(textRect);
+        rect_t r = transformRectToOutputCoord(textRect[0]);
         if (r.isEmpty)
             return r;
 
@@ -908,7 +908,7 @@ private:
     bool _dirtyOut        = true;
 
     bool[16] _paletteDirty; // true if this color changed
-    rect_t  _lastBounds;   // last computed dirty rectangle
+    rect_t[2]  _lastBounds;   // last computed dirty rectangles
 
     // Size of bitmap backing buffer.
     // In _back and _backFlags buffer, every character is rendered 
@@ -1175,8 +1175,11 @@ private:
     //  - font changed
     //  - size changed
     //
-    // Returns: A rectangle that needs to change, in text coordinates.
-    rect_t invalidateChars()
+    // Returns: The rectangle of all text that needs to redrawn, 
+    //          in text coordinates.
+    //          And the rectangle of all text whose blue layer 
+    //          needs to be redrawn, in text coordinates.
+    rect_t[2] invalidateChars()
     {
         // validation results might not need to be recomputed
         if (!_dirtyValidation)
@@ -1184,12 +1187,13 @@ private:
 
         _dirtyValidation = false;
 
-        rect_t bounds;
+        rect_t bounds, blurBounds;
 
         if (_dirtyAllChars)
         {
             _charDirty[] = true;
             bounds = rectWithCoords(0, 0, _columns, _rows);
+            blurBounds = bounds;
         }
         else
         {
@@ -1201,6 +1205,10 @@ private:
                     TM_CharData text  =  _text[icell];
                     TM_CharData cache =  _cache[icell];
                     bool blink = (text.style & TM_blink) != 0;
+                    bool shiny = (text.style & TM_shiny) != 0;
+                    bool wasShiny = (cache.style & TM_shiny) != 0;
+
+                    // Dis this char graphics change?
                     bool redraw = false;
                     if (text != cache)
                         redraw = true; // chardata changed
@@ -1211,16 +1219,22 @@ private:
                     else if (blink && (_cachedBlinkOn != _blinkOn))
                         redraw = true; // text blinked on or off
                     if (redraw)
-                    {
                         bounds = rectMergeWithPoint(bounds, col, row);
-                    }
+
+                    // Did this char _blur_ layer change?
+                    // PERF: some palette change do not trigger blur changes, rare
+                    bool blurChanged = false;
+                    if (redraw && (shiny || wasShiny))
+                        blurBounds = rectMergeWithPoint(blurBounds, col, row);
+
                     _charDirty[icell] = redraw;
                 }
             }
         }
-        _lastBounds = bounds;
+        _lastBounds[0] = bounds;
+        _lastBounds[1] = blurBounds;
         _cachedBlinkOn = _blinkOn;
-        return bounds;
+        return _lastBounds;
     }
 
     // Draw all chars from _text to _back, no caching yet
@@ -1237,12 +1251,13 @@ private:
     }
 
     // Draw from _back/_backFlags to _post/_emit
-    // Returns changed rect, in pixels
-    rect_t backToPost(rect_t textRect) @trusted
+    // Returns changed rect, in pixels. One for out and one for blur.
+    rect_t[2] backToPost(rect_t[2] textRect) @trusted
     {
         bool drawBorder = false;
 
-        rect_t postRect = transformRectToPostCoord(textRect);
+        rect_t postRect = transformRectToPostCoord(textRect[0]);
+        rect_t blurRect = transformRectToPostCoord(textRect[1]);
 
         if (_dirtyPost)
         {
@@ -1265,13 +1280,15 @@ private:
                 _emit[] = rgba16_t(0, 0, 0, 0);
 
             postRect = rectWithCoords(0, 0, _postWidth, _postHeight);
-            textRect = rectWithCoords(0, 0, _columns, _rows);
+            blurRect = rectWithCoords(0, 0, _postWidth, _postHeight);
+            textRect[0] = rectWithCoords(0, 0, _columns, _rows);
+            textRect[1] = textRect[0];
         }
 
         // Which chars to copy, with scale and margins applied?
-        for (int row = textRect.top; row < textRect.bottom; ++row)
+        for (int row = textRect[0].top; row < textRect[0].bottom; ++row)
         {
-            for (int col = textRect.left; col < textRect.right; ++col)
+            for (int col = textRect[0].left; col < textRect[0].right; ++col)
             {
                 int charIndex = col + _columns * row;
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
@@ -1282,7 +1299,7 @@ private:
             }
         }
         _dirtyPost = false;
-        return postRect;
+        return [postRect, blurRect];
     }
 
     void copyCharBackToPost(int col, int row, bool shiny) @trusted
