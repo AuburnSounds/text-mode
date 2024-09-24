@@ -763,11 +763,13 @@ nothrow:
         // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
 
-        // 3. Effect go here. Blur, screen simulation, etc.
-        //    So, effect are applied in final resolution size.
+        // 3. Blur go here.
+        applyBlur(postRect); // PERF: gives least amount of update rectangles
+
+        // 4. Other effects. Screen simulation, etc.
         applyEffects(postRect);
 
-        // 4. Blend into out buffer.
+        // 5. Blend into out buffer.
         postToOut(textRect);
     }
 
@@ -958,6 +960,8 @@ private:
 
     // if true, whole blur must be redone
     bool _dirtyBlur = false;
+    // if true, whole final buffer must be redone
+    bool _dirtyFinal = false;
     int _filterWidth; // filter width of gaussian blur, in pixels
     float[MAX_FILTER_WIDTH] _blurKernel;
     enum MAX_FILTER_WIDTH = 63; // presumably this is slow beyond that
@@ -1196,6 +1200,7 @@ private:
             double mu = 0.0;
             makeGaussianKernel(filterSize, sigma, mu, _blurKernel[]);
             _dirtyBlur = true;
+            _dirtyFinal = true;
         }
     }
 
@@ -1479,7 +1484,7 @@ private:
 
     // copy _post to _final (same space)
     // _final is _post + filtered _emissive
-    void applyEffects(TM_Rect updateRect) @trusted
+    void applyBlur(TM_Rect updateRect) @trusted
     {
         if (_dirtyBlur)
         {
@@ -1570,7 +1575,20 @@ private:
                 _mm_storeu_ps(cast(float*) &blurScan[x], mmBlur);
             }
         }
+    }
 
+    void applyEffects(TM_Rect updateRect) @trusted
+    {
+        if (_dirtyFinal)
+        {
+            updateRect = TM_Rect(0, 0, _outW, _outH);
+            _dirtyFinal = false;
+        }
+
+        if (updateRect.isEmpty)
+            return;
+
+        int filter_2 = _filterWidth / 2;
 
         for (int y = updateRect.y1 - filter_2; 
                 y < updateRect.y2 + filter_2; ++y)
@@ -1578,7 +1596,7 @@ private:
             if (y < 0 || y >= _postHeight) 
                 continue;
 
-            const(rgba_t)*   postScan = &_post[_postWidth * y];
+            const(rgba_t)*    postScan = &_post[_postWidth * y];
             const(rgba32f_t)* blurScan = &_blur[_postWidth * y];
             rgba_t*           finalScan = &_final[_postWidth * y];
 
