@@ -9,6 +9,7 @@ import std.utf: byDchar;
 import std.math: abs, exp, sqrt;
 
 import inteli.smmintrin;
+import rectlist;
 
 nothrow:
 @nogc:
@@ -945,14 +946,15 @@ private:
     }
 
     // A buffer for effects, same size as outbuf (including borders)
-    // In _post/_blur/_emit/_emitH buffers, scale is applied and also 
+    // In _post/_blur/_emit/_emitH/_final buffers, scale is applied and also 
     // borders.
     int _postWidth  = -1;
     int _postHeight = -1;
     rgba_t[] _post  = null; 
 
-    rgba_t[] _blur  = null; // a buffer that is a copy of _post, with 
-                            // blur applied
+    rgba32f_t[] _blur  = null; // a buffer that is a copy of _post, with 
+                            // only blur applied
+    rgba_t[] _final  = null; // a buffer that compsite _post and _blur
 
     // if true, whole blur must be redone
     bool _dirtyBlur = false;
@@ -1155,17 +1157,26 @@ private:
     {
         if (width != _postWidth || height != _postHeight)
         {
-            size_t pixels = width * height;
-            size_t bytesPerBuffer = pixels * 4;
-            void* p = realloc_c17(_post.ptr, bytesPerBuffer * 6);
-            _post  = (cast(rgba_t*)p)[0..pixels];
-            _blur  = (cast(rgba_t*)p)[pixels..pixels*2];
-            _emit  = (cast(rgba16_t*)p)[pixels..pixels*2];
-            _emitH = (cast(rgba16_t*)p)[pixels*2..pixels*4];
+            ubyte* p = null;
+            size_t needed = layout(p, width, height);
+            p = cast(ubyte*) realloc_c17(_post.ptr, needed);
+            layout(p, width, height);
             _postWidth = width;
             _postHeight = height;
             _dirtyPost = true;
         }
+    }
+
+    size_t layout(ubyte* p, int width, int height) @trusted
+    {
+        ubyte*pold = p;
+        size_t pixels = width * height;
+        _post  = (cast(rgba_t*   )p)[0..pixels]; p += pixels * rgba_t.sizeof;
+        _final = (cast(rgba_t*   )p)[0..pixels]; p += pixels * rgba_t.sizeof;
+        _emit  = (cast(rgba16_t* )p)[0..pixels]; p += pixels * rgba16_t.sizeof;
+        _emitH = (cast(rgba16_t* )p)[0..pixels]; p += pixels * rgba16_t.sizeof;
+        _blur  = (cast(rgba32f_t*)p)[0..pixels]; p += pixels * rgba32f_t.sizeof;
+        return p - pold;
     }
 
     void updateFilterSize(int filterSize)
@@ -1228,7 +1239,7 @@ private:
                     int icell = col + row * _columns;
                     TM_CharData text  =  _text[icell];
                     TM_CharData cache =  _cache[icell];
-                    bool blink = (text.style & TM_shiny) != 0;
+                    bool blink = (text.style & TM_blink) != 0;
                     bool redraw = false;
                     if (text != cache)
                         redraw = true; // chardata changed
@@ -1392,7 +1403,7 @@ private:
 
         for (int y = changeRect.y1; y < changeRect.y2; ++y)
         {
-            const(rgba_t)* postScan = &_blur[_postWidth * y];
+            const(rgba_t)* postScan = &_final[_postWidth * y];
             rgba_t*         outScan = cast(rgba_t*)(_outPixels 
                                                      + _outPitch * y);
 
@@ -1466,8 +1477,8 @@ private:
         }
     }
 
-    // copy _post to _blur (same space)
-    // _blur is _post + filtered _emissive
+    // copy _post to _final (same space)
+    // _final is _post + filtered _emissive
     void applyEffects(TM_Rect updateRect) @trusted
     {
         if (_dirtyBlur)
@@ -1523,8 +1534,7 @@ private:
             if (y < 0 || y >= _postHeight) 
                 continue;
  
-            const(rgba_t)*   postScan = &_post[_postWidth * y];
-            rgba_t*          blurScan = &_blur[_postWidth * y];
+            rgba32f_t*       blurScan = &_blur[_postWidth * y];
             
             for (int x = updateRect.x1 - filter_2; 
                      x < updateRect.x2 + filter_2; ++x)
@@ -1547,6 +1557,36 @@ private:
                     __m128i mmEmit = _mm_setr_epi32(emitH.r, emitH.g, emitH.b, emitH.a);
                     mmBlur = mmBlur + _mm_cvtepi32_ps(mmEmit) * _mm_set1_ps(factor);
                 }
+                mmBlur = _mm_sqrt_ps(mmBlur);
+                if (_options.noiseTexture)
+                {
+                    // so that the user has easier tuning values
+                    enum float NSCALE = 0.0006f;
+                    float noiseAmount = _options.noiseAmount * NSCALE;
+                    float noise = NOISE_16x16[(x & 15)*16 + (y & 15)];
+                    noise = (noise - 127.5f) * noiseAmount;
+                    mmBlur = mmBlur * (1.0f + noise);
+                }
+                _mm_storeu_ps(cast(float*) &blurScan[x], mmBlur);
+            }
+        }
+
+
+        for (int y = updateRect.y1 - filter_2; 
+                y < updateRect.y2 + filter_2; ++y)
+        {
+            if (y < 0 || y >= _postHeight) 
+                continue;
+
+            const(rgba_t)*   postScan = &_post[_postWidth * y];
+            const(rgba32f_t)* blurScan = &_blur[_postWidth * y];
+            rgba_t*           finalScan = &_final[_postWidth * y];
+
+            for (int x = updateRect.x1 - filter_2; 
+                     x < updateRect.x2 + filter_2; ++x)
+            {
+                if (x < 0) continue;
+                if (x >= _postWidth) continue;
 
                 static ubyte clamp_0_255(float t) pure
                 {
@@ -1561,27 +1601,17 @@ private:
                     return a < b ? a : b;
                 }
 
-                mmBlur = _mm_sqrt_ps(mmBlur);
-
-                if (_options.noiseTexture)
-                {
-                    // so that the user has easier tuning values
-                    enum float NSCALE = 0.0006f;
-                    float noiseAmount = _options.noiseAmount * NSCALE;
-                    float noise = NOISE_16x16[(x & 15)*16 + (y & 15)];
-                    noise = (noise - 127.5f) * noiseAmount;
-                    mmBlur = mmBlur * (1.0f + noise);
-                }
+                __m128 mmBlur = _mm_loadu_ps(cast(float*) &blurScan[x]);
 
                 // PERF: could be improved with SIMD below
 
                 float BLUR_AMOUNT = _options.blurAmount;
 
                 // Add blur
-                rgba_t post = postScan[x];
-                float R = post.r + mmBlur.array[0] * BLUR_AMOUNT;
-                float G = post.g + mmBlur.array[1] * BLUR_AMOUNT;
-                float B = post.b + mmBlur.array[2] * BLUR_AMOUNT;
+                rgba_t finalCol = postScan[x];
+                float R = finalCol.r + mmBlur.array[0] * BLUR_AMOUNT;
+                float G = finalCol.g + mmBlur.array[1] * BLUR_AMOUNT;
+                float B = finalCol.b + mmBlur.array[2] * BLUR_AMOUNT;
 
                 if (_options.tonemapping)
                 {
@@ -1601,10 +1631,10 @@ private:
                     B += exceedLuma * tmRatio;
                 }
 
-                post.r = clamp_0_255(R);
-                post.g = clamp_0_255(G);
-                post.b = clamp_0_255(B);
-                blurScan[x] = post;
+                finalCol.r = clamp_0_255(R);
+                finalCol.g = clamp_0_255(G);
+                finalCol.b = clamp_0_255(B);
+                finalScan[x] = finalCol;
             }
         }
     }
@@ -1620,6 +1650,11 @@ struct rgba_t
 struct rgba16_t
 {
     ushort r, g, b, a;
+}
+
+struct rgba32f_t
+{
+    float r, g, b, a;
 }
 
 // 16x16 patch of 8-bit blue noise, tileable. 
