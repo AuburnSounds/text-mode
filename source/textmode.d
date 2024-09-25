@@ -711,11 +711,14 @@ nothrow:
     void render() 
         @system // memory-safe if `outbuf()` called and memory-safe
     {
-        // 0. Invalidate characters that need redraw in _back buffer.
+        // 0. Recompute placement of text in post buffer.
+        recomputeLayout();
+
+        // 1. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
         rect_t[2] textRect = invalidateChars();
 
-        // 1. Draw chars in original size, only those who changed.
+        // 2. Draw chars in original size, only those who changed.
         drawAllChars(textRect[0]);
 
         // from now on, consider _text and _back is up-to-date.
@@ -724,10 +727,7 @@ nothrow:
         _dirtyAllChars = false;
         _cache[] = _text[];
 
-        // Recompute placement of text in post buffer.
-        recomputeLayout();
-
-        // 2. Apply scale, character margins, etc.
+        // 3. Apply scale, character margins, etc.
         // Take characters in _back and put them in _post, into the 
         // final resolution.
         // This only needs done for _charDirty chars.
@@ -739,13 +739,13 @@ nothrow:
         // Dirty border color can affect out and post buffers redraw
         _paletteDirty[] = false;
 
-        // 3. Blur go here.
-        applyBlur(postRect[1]); // PERF: gives least amount of update rectangles
+        // 4. Blur go here.
+        applyBlur(postRect[1]); // PERF: give list of rectangles
 
-        // 4. Other effects. Screen simulation, etc.
+        // 5. Other effects. Screen simulation, etc.
         applyEffects(postRect[0]);
 
-        // 5. Blend into out buffer.
+        // 6. Blend into out buffer.
         postToOut(textRect[0]);
     }
 
@@ -807,12 +807,13 @@ nothrow:
             return rectWithCoords(0, 0, _outW, _outH);
         }
 
+        recomputeLayout();
+
         rect_t[2] textRect = invalidateChars();
 
         if (textRect[0].isEmpty)
             return rectWithCoords(0, 0, 0, 0);
 
-        recomputeLayout();
 
         rect_t r = transformRectToOutputCoord(textRect[0]);
         if (r.isEmpty)
@@ -923,17 +924,16 @@ private:
     }
 
     // A buffer for effects, same size as outbuf (including borders)
-    // In _post/_blur/_emit/_emitH/_final buffers, scale is applied and also 
-    // borders.
+    // In _post/_blur/_emit/_emitH/_final buffers, scale is applied 
+    // and also borders.
     int _postWidth  = -1;
     int _postHeight = -1;
-    rgba_t[] _post  = null; 
-
-    rgba32f_t[] _blur  = null; // a buffer that is a copy of _post, with 
-                            // only blur applied
+    rgba_t[] _post  = null;
+    rgba32f_t[] _blur = null; // a buffer that is a copy of _post, 
+                              // with only blur applied
     rgba_t[] _final  = null; // a buffer that compsite _post and _blur
 
-    // if true, whole blur must be redone
+    // if true, whole blur must be redone, for character that have blur
     bool _dirtyBlur = false;
     // if true, whole final buffer must be redone
     bool _dirtyFinal = false;
@@ -1137,12 +1137,12 @@ private:
     size_t layout(ubyte* p, int width, int height) @trusted
     {
         ubyte*pold = p;
-        size_t pixels = width * height;
-        _post  = (cast(rgba_t*   )p)[0..pixels]; p += pixels * rgba_t.sizeof;
-        _final = (cast(rgba_t*   )p)[0..pixels]; p += pixels * rgba_t.sizeof;
-        _emit  = (cast(rgba16_t* )p)[0..pixels]; p += pixels * rgba16_t.sizeof;
-        _emitH = (cast(rgba16_t* )p)[0..pixels]; p += pixels * rgba16_t.sizeof;
-        _blur  = (cast(rgba32f_t*)p)[0..pixels]; p += pixels * rgba32f_t.sizeof;
+        size_t pels = width * height;
+        _post  = (cast(rgba_t*   )p)[0..pels]; p += pels * 4;
+        _final = (cast(rgba_t*   )p)[0..pels]; p += pels * 4;
+        _emit  = (cast(rgba16_t* )p)[0..pels]; p += pels * 8;
+        _emitH = (cast(rgba16_t* )p)[0..pels]; p += pels * 8;
+        _blur  = (cast(rgba32f_t*)p)[0..pels]; p += pels * 16;
         return p - pold;
     }
 
@@ -1182,55 +1182,50 @@ private:
     rect_t[2] invalidateChars()
     {
         // validation results might not need to be recomputed
-        if (!_dirtyValidation)
+        if (!_dirtyValidation && !_dirtyBlur)
             return _lastBounds;
 
         _dirtyValidation = false;
 
         rect_t bounds, blurBounds;
 
-        if (_dirtyAllChars)
+        for (int row = 0; row < _rows; ++row)
         {
-            _charDirty[] = true;
-            bounds = rectWithCoords(0, 0, _columns, _rows);
-            blurBounds = bounds;
-        }
-        else
-        {
-            for (int row = 0; row < _rows; ++row)
+            for (int col = 0; col < _columns; ++col)
             {
-                for (int col = 0; col < _columns; ++col)
-                {
-                    int icell = col + row * _columns;
-                    TM_CharData text  =  _text[icell];
-                    TM_CharData cache =  _cache[icell];
-                    bool blink = (text.style & TM_blink) != 0;
-                    bool shiny = (text.style & TM_shiny) != 0;
-                    bool wasShiny = (cache.style & TM_shiny) != 0;
+                int icell = col + row * _columns;
+                TM_CharData text  =  _text[icell];
+                TM_CharData cache =  _cache[icell];
+                bool blink = (text.style & TM_blink) != 0;
+                bool shiny = (text.style & TM_shiny) != 0;
+                bool wasShiny = (cache.style & TM_shiny) != 0;
 
-                    // Dis this char graphics change?
-                    bool redraw = false;
-                    if (text != cache)
-                        redraw = true; // chardata changed
-                    else if (_paletteDirty[text.color & 0x0f])
-                        redraw = true; // fg color changed
-                    else if (_paletteDirty[text.color >>> 4])
-                        redraw = true; // bg color changed
-                    else if (blink && (_cachedBlinkOn != _blinkOn))
-                        redraw = true; // text blinked on or off
-                    if (redraw)
-                        bounds = rectMergeWithPoint(bounds, col, row);
+                // Dis this char graphics change?
+                bool redraw = false;
+                if (_dirtyAllChars)
+                    redraw = true;
+                if (text != cache)
+                    redraw = true; // chardata changed
+                else if (_paletteDirty[text.color & 0x0f])
+                    redraw = true; // fg color changed
+                else if (_paletteDirty[text.color >>> 4])
+                    redraw = true; // bg color changed
+                else if (blink && (_cachedBlinkOn != _blinkOn))
+                    redraw = true; // text blinked on or off
+                if (redraw)
+                    bounds = rectMergeWithPoint(bounds, col, row);
 
-                    // Did this char _blur_ layer change?
-                    // PERF: some palette change do not trigger blur changes, rare
-                    bool blurChanged = false;
-                    if (redraw && (shiny || wasShiny))
-                        blurBounds = rectMergeWithPoint(blurBounds, col, row);
+                // Did this char _blur_ layer change?
+                // PERF: some palette change do not trigger blur changes, rare
+                bool blurChanged = redraw && (shiny || wasShiny);
+                blurChanged = blurChanged || (_dirtyBlur && shiny);
+                if (blurChanged)
+                    blurBounds = rectMergeWithPoint(blurBounds, col, row);
 
-                    _charDirty[icell] = redraw;
-                }
+                _charDirty[icell] = redraw;
             }
         }
+        _dirtyBlur = false;
         _lastBounds[0] = bounds;
         _lastBounds[1] = blurBounds;
         _cachedBlinkOn = _blinkOn;
@@ -1275,20 +1270,25 @@ private:
 
             // now also fill _emit, and since border is never <shiny>
             if (_options.borderShiny)
+            {
                 _emit[] = linearU16Premul(border);
+                blurRect = rectWithCoords(0, 0, 
+                            _postWidth, _postHeight);
+            }
             else
                 _emit[] = rgba16_t(0, 0, 0, 0);
 
-            postRect = rectWithCoords(0, 0, _postWidth, _postHeight);
-            blurRect = rectWithCoords(0, 0, _postWidth, _postHeight);
+            postRect = rectWithCoords(0, 0, _postWidth, _postHeight);            
             textRect[0] = rectWithCoords(0, 0, _columns, _rows);
             textRect[1] = textRect[0];
         }
 
+        rect_t trect = textRect[0];
+
         // Which chars to copy, with scale and margins applied?
-        for (int row = textRect[0].top; row < textRect[0].bottom; ++row)
+        for (int row = trect.top; row < trect.bottom; ++row)
         {
-            for (int col = textRect[0].left; col < textRect[0].right; ++col)
+            for (int col = trect.left; col < trect.right; ++col)
             {
                 int charIndex = col + _columns * row;
                 if ( ! ( _charDirty[charIndex] || _dirtyPost) )
@@ -1451,11 +1451,11 @@ private:
     // _final is _post + filtered _emissive
     void applyBlur(rect_t updateRect) @trusted
     {
-        if (_dirtyBlur)
+       /* if (_dirtyBlur)
         {
             updateRect = rectWithCoords(0, 0, _outW, _outH);
             _dirtyBlur = false;
-        }
+        }*/
 
         if (updateRect.isEmpty)
             return;
@@ -1474,7 +1474,7 @@ private:
                 int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
                     continue;
-                __m128 mmRGBA = _mm_setzero_ps();
+                __m128 mmC = _mm_setzero_ps();
 
                 float[] kernel = _blurKernel;
                 for (int n = -filter_2; n <= filter_2; ++n)
@@ -1482,17 +1482,17 @@ private:
                     int xe = x + n;
                     if (xe < 0 || xe >= _postWidth) 
                         continue;
-                    rgba16_t emit = emitScan[xe];
-                    __m128i mmEmit = _mm_setr_epi32(emit.r, emit.g, emit.b, emit.a);
-                    float factor = _blurKernel[filter_2 + n];
-                    mmRGBA = mmRGBA + _mm_cvtepi32_ps(mmEmit) * _mm_set1_ps(factor);
+                    rgba16_t e = emitScan[xe];
+                    __m128i mmE = _mm_setr_epi32(e.r, e.g, e.b, e.a);
+                    float w = _blurKernel[filter_2 + n];
+                    __m128 ew = _mm_cvtepi32_ps(mmE) * _mm_set1_ps(w);
+                    mmC = mmC + ew;
                 }
 
                 // store result transposed in _emitH
                 // for faster convolution in Y afterwards
                 rgba16_t* emitH = &_emitH[_postHeight * x + y];
-                __m128i mmRes = _mm_cvttps_epi32(mmRGBA);
-                
+                __m128i mmRes = _mm_cvttps_epi32(mmC);                
                 mmRes = _mm_packus_epi32(mmRes, mmRes);
                 _mm_storeu_si64(emitH, mmRes);
             }
@@ -1504,13 +1504,13 @@ private:
             if (y < 0 || y >= _postHeight) 
                 continue;
  
-            rgba32f_t*       blurScan = &_blur[_postWidth * y];
+            rgba32f_t* blurScan = &_blur[_postWidth * y];
             
             for (int x = updateRect.left - filter_2; 
                      x < updateRect.right + filter_2; ++x)
             {
                 // blur vertically
-                __m128 mmBlur = _mm_setzero_ps();
+                __m128 mmC = _mm_setzero_ps();
 
                 if (x < 0) continue;
                 if (x >= _postWidth) continue;
@@ -1522,12 +1522,13 @@ private:
                     int ye = y + n;
                     if (ye < 0) continue;
                     if (ye >= _postHeight) continue;
-                    rgba16_t emitH = emitHScan[ye];
-                    float factor = _blurKernel[filter_2 + n];
-                    __m128i mmEmit = _mm_setr_epi32(emitH.r, emitH.g, emitH.b, emitH.a);
-                    mmBlur = mmBlur + _mm_cvtepi32_ps(mmEmit) * _mm_set1_ps(factor);
+                    rgba16_t e = emitHScan[ye];
+                    float w = _blurKernel[filter_2 + n];
+                    __m128i mmE = _mm_setr_epi32(e.r, e.g, e.b, e.a);
+                    __m128 ew = _mm_cvtepi32_ps(mmE) * _mm_set1_ps(w);
+                    mmC = mmC + ew;
                 }
-                mmBlur = _mm_sqrt_ps(mmBlur);
+                mmC = _mm_sqrt_ps(mmC);
                 if (_options.noiseTexture)
                 {
                     // so that the user has easier tuning values
@@ -1535,9 +1536,9 @@ private:
                     float noiseAmount = _options.noiseAmount * NSCALE;
                     float noise = NOISE_16x16[(x & 15)*16 + (y & 15)];
                     noise = (noise - 127.5f) * noiseAmount;
-                    mmBlur = mmBlur * (1.0f + noise);
+                    mmC = mmC * (1.0f + noise);
                 }
-                _mm_storeu_ps(cast(float*) &blurScan[x], mmBlur);
+                _mm_storeu_ps(cast(float*) &blurScan[x], mmC);
             }
         }
     }
@@ -1584,17 +1585,17 @@ private:
                     return a < b ? a : b;
                 }
 
-                __m128 mmBlur = _mm_loadu_ps(cast(float*) &blurScan[x]);
+                __m128 blur = _mm_loadu_ps(cast(float*)&blurScan[x]);
 
                 // PERF: could be improved with SIMD below
 
-                float BLUR_AMOUNT = _options.blurAmount;
+                float blurAmt = _options.blurAmount;
 
                 // Add blur
                 rgba_t finalCol = postScan[x];
-                float R = finalCol.r + mmBlur.array[0] * BLUR_AMOUNT;
-                float G = finalCol.g + mmBlur.array[1] * BLUR_AMOUNT;
-                float B = finalCol.b + mmBlur.array[2] * BLUR_AMOUNT;
+                float R = finalCol.r + blur.array[0] * blurAmt;
+                float G = finalCol.g + blur.array[1] * blurAmt;
+                float B = finalCol.b + blur.array[2] * blurAmt;
 
                 if (_options.tonemapping)
                 {
@@ -1905,7 +1906,7 @@ static immutable ubyte[96 * 8] BASIC_LATIN =
     0x00, 0x00, 0xcc, 0xcc, 0xcc, 0x7c, 0x0c, 0xf8, // U+0079 y
     0x00, 0x00, 0xfc, 0x98, 0x30, 0x64, 0xfc, 0x00, // U+007A z
     0x1c, 0x30, 0x30, 0xe0, 0x30, 0x30, 0x1c, 0x00, // U+007B {
-    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, // U+007C | Vert line
+    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, // U+007C |
     0xe0, 0x30, 0x30, 0x1c, 0x30, 0x30, 0xe0, 0x00, // U+007D }
     0x76, 0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+007E ~
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+007F Delete
@@ -1919,10 +1920,10 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x38, 0x6c, 0x64, 0xf0, 0x60, 0xe6, 0xfc, 0x00, // U+00A3 £
     0x00, 0x84, 0x78, 0xcc, 0xcc, 0x78, 0x84, 0x00, // U+00A4 ¤
     0x30, 0x30, 0x00, 0x78, 0xcc, 0xfc, 0xcc, 0x00, // U+00A5 Å
-    0x18, 0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x00, // U+00A6 | broken bar
+    0x18, 0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x00, // U+00A6 |
     0x3c, 0x60, 0x78, 0x6c, 0x6c, 0x3c, 0x0c, 0x78, // U+00A7 §
-    0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00A8 ¨ diaeresis
-    0x7e, 0x81, 0x9d, 0xa1, 0xa1, 0x9d, 0x81, 0x7e, // U+00A9 (c) copyright 
+    0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00A8 ¨
+    0x7e, 0x81, 0x9d, 0xa1, 0xa1, 0x9d, 0x81, 0x7e, // U+00A9 (c)
 ];
 
 /* CP437 upper range
