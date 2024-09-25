@@ -92,13 +92,13 @@ bool rectContainsPoint(const(rect_t) r, int pointX, int pointY) {
 
 
 /**
-    Returns: `true` if rectangle contains another `rect_t`.
+    Returns: `true` if rectangle `r` contains another `o`.
 */
-bool rectContainsRect(const(rect_t) r, const(rect_t) other) {
+bool rectContainsRect(const(rect_t) r, const(rect_t) u) {
     assert(rectIsSorted(r));
-    assert(rectIsSorted(other));
-    if ( (other.left < r.left) || (other.right > r.right) ) return false;
-    if ( (other.left < r.left) || (other.right > r.right) ) return false;
+    assert(rectIsSorted(o));
+    if ( (o.left < r.left) || (o.right > r.right) ) return false;
+    if ( (o.left < r.left) || (o.right > r.right) ) return false;
     return true;
 }
 
@@ -184,7 +184,7 @@ rect_t rectMergeWithPoint(const(rect_t) a, int x, int y) {
     Returns: `true` if none of the rectangles overlap with each 
     other. VERY INEFFICIENT, keep it for debug purpose.
 */
-bool rectHaveNoOverlap(const(rect_t)[] rects) {    
+bool rectHaveNoOverlap(const(rect_t)[] rects) {
     foreach(i; 0..rects.length) {
         assert(rectIsSorted(rects[i]));
         foreach (j; i+1..rects.length)
@@ -247,7 +247,23 @@ bool rectlistIsEmpty(ref rectlist_t rl) @trusted {
     Push back one rectangle at the end of the list.
 */
 void rectlistPush(ref rectlist_t rl, rect_t r) @trusted {
-    return sb_push(rl.rects, r);
+    sb_push(rl.rects, r);
+}
+
+/**
+    Push back one rectangle if not empty.
+*/
+void rectlistPushIfNotEmpty(ref rectlist_t rl, rect_t r) @trusted {
+    if (!rectIsEmpty(r)) sb_push(rl.rects, r);
+}
+
+
+/**
+    Clear rectangles, and release the allocation.
+    List is now an empty list.
+*/
+void rectlistFree(ref rectlist_t rl) @trusted {
+    sb_free(rl.rects);
 }
 
 /**
@@ -260,12 +276,13 @@ int rectlistCount(ref const(rectlist_t) rl) @trusted {
 /**
     Return nth items of list.
 */
-rect_t rectlistNth(ref const(rectlist_t) rl, int nth) @trusted {
+ref inout(rect_t) rectlistNth(ref inout(rectlist_t) rl, int nth) 
+    @trusted {
     return rl.rects[nth];
 }
 
 /**
-    Clear list of rectangles to 0 items.
+    Clear list of rectangles to 0 items, but keep the allocation.
 */
 void rectlistClear(ref rectlist_t rl) @trusted {
     sb_clear(rl.rects);
@@ -274,7 +291,8 @@ void rectlistClear(ref rectlist_t rl) @trusted {
 /**
     Returns: rectangles in the list as a slice.
 */
-const(rect_t)[] rectlistRectangles(ref const(rectlist_t) rl) @trusted {
+inout(rect_t)[] rectlistRectangles(ref inout(rectlist_t) rl) 
+@trusted {
     int count = rectlistCount(rl);
     if (count == 0) return [];
     return rl.rects[0..count];
@@ -342,27 +360,66 @@ void rectlistRemoveOverlapping(ref rectlist_t input,
                 if (rectContainsRect(A, B)) {
                     // Remove that box since it has been dealt with
                     sb_delete_nth_replace_by_last(input.rects, j);
-                    j = j - 1; // no need to tweak i since j is after i
+                    j = j - 1; // no need to tweak i since i < j
                     continue;
                 }
                 foundIntersection = true; // A not pushed as is
+
                 if (rectContainsRect(B, A)) {
                     // Keep the larger rectangle, drop A
                     break;
                 }
                 else {
-                    // computes A without A inter B
-                    rect_t D, E, F, G;
-                    rectSubtraction(A, C, D, E, F, G);
+                    // computes A without (A inter B)
 
-                    // New relevant rectangles added to the input
-                    if ( ! rectIsEmpty(D)) rectlistPush(input, D);
-                    if ( ! rectIsEmpty(E)) rectlistPush(input, E);
-                    if ( ! rectIsEmpty(F)) rectlistPush(input, F);
-                    if ( ! rectIsEmpty(G)) rectlistPush(input, G);
+                    enum FORMER_SPLIT_ALGO = false;
+                    static if (FORMER_SPLIT_ALGO) {
+                        rect_t D, E, F, G;
+                        rectSubtractionH(A, C, D, E, F, G);
+                        rectlistPushIfNotEmpty(input, D);
+                        rectlistPushIfNotEmpty(input, E);
+                        rectlistPushIfNotEmpty(input, F);
+                        rectlistPushIfNotEmpty(input, G);
+                    }
+                    else {
+                        // newer algo splits in 2 ways and keeps best
+                        rect_t D, E, F, G;
+                        rect_t H, I, J, K;
+                        rectSubtractionH(A, C, D, E, F, G);
+                        rectSubtractionV(A, C, H, I, J, K);
 
-                    // no need to search for other intersection in A,
-                    // since its parts have been pushed
+                        static int minOfWidthHeight(rect_t r) {
+                            int w = rectWidth(r);
+                            int h = rectHeight(r);
+                            return w < h ? w : h;
+                        }
+
+                        static int evalSplit(rect_t r0, rect_t r1, 
+                                             rect_t r2, rect_t r3) {
+                            int s0 = minOfWidthHeight(r0);
+                            int s1 = minOfWidthHeight(r1);
+                            int s2 = minOfWidthHeight(r2);
+                            int s3 = minOfWidthHeight(r3);
+                            s0 = s0 > s1 ? s0 : s1;
+                            s2 = s2 > s3 ? s2 : s3;
+                            return s0 > s2 ? s0 : s2;
+                        }
+
+                        int scoreH = evalSplit(D, E, F, G);
+                        int scoreV = evalSplit(H, I, J, K);
+                        if (scoreH > scoreV) {
+                            rectlistPushIfNotEmpty(input, D);
+                            rectlistPushIfNotEmpty(input, E);
+                            rectlistPushIfNotEmpty(input, F);
+                            rectlistPushIfNotEmpty(input, G);
+                        }
+                        else {
+                            rectlistPushIfNotEmpty(input, H);
+                            rectlistPushIfNotEmpty(input, I);
+                            rectlistPushIfNotEmpty(input, J);
+                            rectlistPushIfNotEmpty(input, K);
+                        }
+                    }
                     break;
                 }
             }
@@ -401,14 +458,34 @@ unittest {
     |         |               |    G    |
     +---------+               +---------+
 */
-void rectSubtraction(rect_t A, rect_t C, 
-                     out rect_t D, out rect_t E, 
-                     out rect_t F, out rect_t G)
+void rectSubtractionH(rect_t A, rect_t C, 
+                      out rect_t D, out rect_t E, 
+                      out rect_t F, out rect_t G)
 {
     D = rectWithCoords(A.left, A.top, A.right, C.top);
     E = rectWithCoords(A.left, C.top, C.left, C.bottom);
     F = rectWithCoords(C.right, C.top, A.right, C.bottom);
     G = rectWithCoords(A.left, C.bottom, A.right, A.bottom);
+}
+
+
+/**
++---------+               +---------+
+|    A    |               |  | E |  |
+|  +---+  |   After split +  +---+  +
+|  | C |  |        =>     | D|   |G |   
+|  +---+  |               +  +---+  +
+|         |               |  | F |  |
++---------+               +---------+
+*/
+void rectSubtractionV(rect_t A, rect_t C, 
+                      out rect_t D, out rect_t E, 
+                      out rect_t F, out rect_t G)
+{
+    D = rectWithCoords(A.left, A.top, C.left, A.bottom);
+    E = rectWithCoords(C.left, A.top, C.right, C.top);
+    F = rectWithCoords(C.left, C.bottom, C.right, A.bottom);
+    G = rectWithCoords(C.right, C.top, A.right, A.bottom);
 }
 
 
@@ -463,7 +540,7 @@ public @system
     /**
         Clear existing items.
     */
-    void sb_clear(T)(scope T* a) { sb_n(a) = 0; }    
+    void sb_clear(T)(scope T* a) { if (a) sb_n(a) = 0; }
 
     /**
         Delete one item, replace by last item in the buffer.
@@ -516,3 +593,4 @@ private @system
         assert(arr[i] == i);
     sb_free(arr);
 }
+
