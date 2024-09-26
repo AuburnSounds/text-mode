@@ -220,6 +220,19 @@ rect_t rectGrow(rect_t r, int amount) {
 }
 
 
+/**
+    Returns: This rectangle, extended by different amounts 
+    horizontally and vertically.
+*/
+rect_t rectGrowXY(rect_t r, int amtX, int amtY) {
+    r.left   -= amtX;
+    r.right  += amtX;
+    r.top    -= amtY;
+    r.bottom += amtY;
+    return r;
+}
+
+
 /*
 _____ _____ _____ _____ __    _  _____ _____ 
 | __  |   __|     |_   _|  |  | ||   __|_   _|

@@ -1451,29 +1451,29 @@ private:
     // _final is _post + filtered _emissive
     void applyBlur(rect_t updateRect) @trusted
     {
-       /* if (_dirtyBlur)
-        {
-            updateRect = rectWithCoords(0, 0, _outW, _outH);
-            _dirtyBlur = false;
-        }*/
-
         if (updateRect.isEmpty)
             return;
 
         int filter_2 = _filterWidth / 2;
 
+        rect_t wholeOut = rectWithCoords(0, 0, _postWidth, _postHeight);
+
+        rect_t updateH = rectGrowXY(updateRect, filter_2, 0);
+        rect_t updateV = rectGrow(updateRect, filter_2);
+        updateH = rectIntersection(updateH, wholeOut);
+        updateV = rectIntersection(updateV, wholeOut);
+
         // blur emissive horizontally, from _emit to _emitH
         // the updated area is updateRect enlarged horizontally.
-        for (int y = updateRect.top; y < updateRect.bottom; ++y)
+        for (int y = updateH.top; y < updateH.bottom; ++y)
         {
             rgba16_t* emitScan  = &_emit[_postWidth * y]; 
             
-            for (int x = updateRect.left - filter_2; 
-                     x < updateRect.right + filter_2; ++x)
+            for (int x = updateH.left; x < updateH.right; ++x)
             {  
                 int postWidth = _postWidth;
                 if (x < 0 || x >= _postWidth) 
-                    continue;
+                    assert(false);
                 __m128 mmC = _mm_setzero_ps();
 
                 float[] kernel = _blurKernel;
@@ -1492,28 +1492,27 @@ private:
                 // store result transposed in _emitH
                 // for faster convolution in Y afterwards
                 rgba16_t* emitH = &_emitH[_postHeight * x + y];
-                __m128i mmRes = _mm_cvttps_epi32(mmC);                
+                __m128i mmRes = _mm_cvttps_epi32(mmC);
                 mmRes = _mm_packus_epi32(mmRes, mmRes);
                 _mm_storeu_si64(emitH, mmRes);
             }
         }
 
-        for (int y = updateRect.top - filter_2; 
-                 y < updateRect.bottom + filter_2; ++y)
+        // blur vertically
+        for (int y = updateV.top; y < updateV.bottom; ++y)
         {
             if (y < 0 || y >= _postHeight) 
-                continue;
+                assert(false);
  
             rgba32f_t* blurScan = &_blur[_postWidth * y];
             
-            for (int x = updateRect.left - filter_2; 
-                     x < updateRect.right + filter_2; ++x)
-            {
-                // blur vertically
+            for (int x = updateV.left; 
+                     x < updateV.right; ++x)
+            { 
                 __m128 mmC = _mm_setzero_ps();
 
-                if (x < 0) continue;
-                if (x >= _postWidth) continue;
+                if (x < 0) assert(false);
+                if (x >= _postWidth) assert(false);
 
                 const(rgba16_t)* emitHScan = &_emitH[_postHeight * x];
 
@@ -1545,33 +1544,27 @@ private:
 
     void applyEffects(rect_t updateRect) @trusted
     {
+        rect_t wholeOutput = rectWithCoords(0, 0, _outW, _outH);
         if (_dirtyFinal)
         {
-            updateRect = rectWithCoords(0, 0, _outW, _outH);
+            updateRect = wholeOutput;
             _dirtyFinal = false;
         }
 
         if (updateRect.isEmpty)
             return;
 
-        int filter_2 = _filterWidth / 2;
+        updateRect = rectGrow(updateRect, _filterWidth / 2);
+        updateRect = rectIntersection(updateRect, wholeOutput);
 
-        for (int y = updateRect.top - filter_2; 
-                y < updateRect.bottom + filter_2; ++y)
+        for (int y = updateRect.top; y < updateRect.bottom; ++y)
         {
-            if (y < 0 || y >= _postHeight) 
-                continue;
-
             const(rgba_t)*    postScan = &_post[_postWidth * y];
             const(rgba32f_t)* blurScan = &_blur[_postWidth * y];
             rgba_t*           finalScan = &_final[_postWidth * y];
 
-            for (int x = updateRect.left - filter_2; 
-                     x < updateRect.right + filter_2; ++x)
+            for (int x = updateRect.left; x < updateRect.right; ++x)
             {
-                if (x < 0) continue;
-                if (x >= _postWidth) continue;
-
                 static ubyte clamp_0_255(float t) pure
                 {
                     int u = cast(int)t;
