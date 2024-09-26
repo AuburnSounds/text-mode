@@ -1562,7 +1562,6 @@ private:
             const(rgba_t)*    postScan = &_post[_postWidth * y];
             const(rgba32f_t)* blurScan = &_blur[_postWidth * y];
             rgba_t*           finalScan = &_final[_postWidth * y];
-
             for (int x = updateRect.left; x < updateRect.right; ++x)
             {
                 static ubyte clamp_0_255(float t) pure
@@ -1580,38 +1579,42 @@ private:
 
                 __m128 blur = _mm_loadu_ps(cast(float*)&blurScan[x]);
 
-                // PERF: could be improved with SIMD below
+                __m128i post = _mm_loadu_si32(&postScan[x]);
+                __m128i zero = _mm_setzero_si128();
+                post = _mm_unpacklo_epi8(post, zero);
+                post = _mm_unpacklo_epi16(post, zero);
+                __m128 postF = _mm_cvtepi32_ps(post);
 
-                float blurAmt = _options.blurAmount;
+
+                __m128 blurAmt = _mm_set1_ps(_options.blurAmount);
 
                 // Add blur
-                rgba_t finalCol = postScan[x];
-                float R = finalCol.r + blur.array[0] * blurAmt;
-                float G = finalCol.g + blur.array[1] * blurAmt;
-                float B = finalCol.b + blur.array[2] * blurAmt;
+                __m128 RGB = postF + blur * blurAmt;
 
                 if (_options.tonemapping)
                 {
+                    // PERF: SIMD
                     // Similar tonemapping as Dplug.
                     float tmThre  = 255.0f;
                     float tmRatio = _options.tonemappingRatio; 
-                    float excessR = TM_max32f(0.0f, R - tmThre);
-                    float excessG = TM_max32f(0.0f, G - tmThre);
-                    float excessB = TM_max32f(0.0f, B - tmThre);
+                    float excessR = TM_max32f(0.0f, RGB.array[0] - tmThre);
+                    float excessG = TM_max32f(0.0f, RGB.array[1] - tmThre);
+                    float excessB = TM_max32f(0.0f, RGB.array[2] - tmThre);
                     float exceedLuma = 0.3333f * excessR 
                                      + 0.3333f * excessG
                                      + 0.3333f * excessB;
 
                     // Add excess energy in all channels
-                    R += exceedLuma * tmRatio;
-                    G += exceedLuma * tmRatio;
-                    B += exceedLuma * tmRatio;
+                    RGB.ptr[0] += exceedLuma * tmRatio;
+                    RGB.ptr[1] += exceedLuma * tmRatio;
+                    RGB.ptr[2] += exceedLuma * tmRatio;
                 }
 
-                finalCol.r = clamp_0_255(R);
-                finalCol.g = clamp_0_255(G);
-                finalCol.b = clamp_0_255(B);
-                finalScan[x] = finalCol;
+
+                post = _mm_cvttps_epi32(RGB);
+                post = _mm_packs_epi32(post, zero);
+                post = _mm_packus_epi16(post, zero); // clamped
+                _mm_storeu_si32(&finalScan[x], post);
             }
         }
     }
