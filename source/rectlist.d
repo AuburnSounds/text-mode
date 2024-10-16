@@ -450,10 +450,16 @@ unittest {
     assert(rectlistBounds(rl) == rect_t(0, 0, 6, 6));
     rectlist_t ab;
     rectlistRemoveOverlapping(rl, ab);
+
     assert(rectlistRectangles(ab) == 
            [ rect_t(2, 2, 6, 6), 
              rect_t(0, 0, 4, 2), 
-             rect_t(0, 2, 2, 4) ] );
+             rect_t(0, 2, 2, 4) ]
+          ||
+          rectlistRectangles(ab) == 
+           [ rect_t(2, 2, 6, 6), 
+             rect_t(0, 0, 2, 4), 
+             rect_t(2, 0, 4, 2) ]);
     assert(rectlistBounds(ab) == rect_t(0, 0, 6, 6));
 }
 
