@@ -4,6 +4,7 @@ nothrow @nogc @safe:
 
 import core.memory;
 import core.stdc.stdlib: realloc, free;
+import core.stdc.string: memset;
 
 import std.utf: byDchar;
 import std.math: abs, exp, sqrt;
@@ -1458,11 +1459,16 @@ private:
     {
         rect_t wholeOut = rectWithCoords(0, 0, _postWidth, _postHeight);
         if (_dirtyAllBlur) {
-            // PERF: if _dirtyAllBlur but updateRect is empty, all blur is 
-            // black!
+
+            _dirtyAllBlur = false;
+
+            if (updateRect.isEmpty) {
+                memset(_blur.ptr, 0, rgba32f_t.sizeof * _blur.length);
+                return;
+            }
+
             // PERF: technically only need to clear areas from last updateRect done
             updateRect = wholeOut;
-            _dirtyAllBlur = false;
         }
 
         if (updateRect.isEmpty)
