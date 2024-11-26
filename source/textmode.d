@@ -40,13 +40,13 @@ enum : TM_Color
     TM_white    = 15 ///
 }
 
-/** 
+/**
     An individual cell of text-mode buffer.
 
     Either you access it or use the `print` functions.
 
-    The first four bytes are a Unicode codepoint, conflated with a 
-    grapheme and font "glyph". There is only one font, and it's 8x8. 
+    The first four bytes are a Unicode codepoint, conflated with a
+    grapheme and font "glyph". There is only one font, and it's 8x8.
     Not all codepoints exist in that font.
 
     The next 4-bit are foreground color in a 16 color palette.
@@ -59,19 +59,19 @@ nothrow:
 @nogc:
 @safe:
 
-    /// Unicode codepoint to represent. This library doesn't 
+    /// Unicode codepoint to represent. This library doesn't
     /// compose codepoints.
     dchar glyph     = 32;
 
     /// Low nibble = foreground color (0 to 15)
     /// High nibble = background color (0 to 15)
-    ubyte color     = (TM_black << 4) + TM_grey;  
+    ubyte color     = (TM_black << 4) + TM_grey;
 
     /// Style of that character, a combination of TM_Style flags.
-    TM_Style style; 
+    TM_Style style;
 }
 
-/** 
+/**
     Character styles.
  */
 alias TM_Style = ubyte;
@@ -87,7 +87,7 @@ enum : TM_Style
 
 /**
     Predefined palettes (default: vintage is loaded).
-    You can either load a predefined palette, or change colors 
+    You can either load a predefined palette, or change colors
     individually.
  */
 enum TM_Palette
@@ -99,8 +99,8 @@ enum TM_Palette
 }
 
 /// Selected vintage font.
-/// There is only one font, our goal it provide a Unicode 8x8 
-/// font suitable for most languages, so others were removed. 
+/// There is only one font, our goal it provide a Unicode 8x8
+/// font suitable for most languages, so others were removed.
 /// A text mode with `dchar` as input.
 enum TM_Font
 {
@@ -169,7 +169,7 @@ struct TM_Options
     /// This changes the blur filter width (1.0f means default).
     float blurScale        = 1.0f;
 
-    /// Whether foreground/background color contributes to blur.    
+    /// Whether foreground/background color contributes to blur.
     bool blurForeground    = true;
     bool blurBackground    = true; ///ditto
 
@@ -194,7 +194,7 @@ struct TM_Options
 }
 
 
-/** 
+/**
     Main API of the text-mode library.
 
 
@@ -206,14 +206,14 @@ struct TM_Options
         console.render();
 
     All calls can be mixed and match without any ordering, except
-    that a call to 
+    that a call to
      the sequence:
         getUpdateRect
         TM_Rect dirty = console.
 
     Note: None of the `TM_Console` functions are thread-safe. Either
           call them single-threaded, or synchronize externally.
-          None of them can be called concurrently, unless it's 
+          None of them can be called concurrently, unless it's
           different `TM_Console` objects.
 */
 struct TM_Console
@@ -223,11 +223,11 @@ nothrow:
 @nogc:
 
 
-    // ███████╗███████╗████████╗██╗   ██╗██████╗ 
+    // ███████╗███████╗████████╗██╗   ██╗██████╗
     // ██╔════╝██╔════╝╚══██╔══╝██║   ██║██╔══██╗
     // ███████╗█████╗     ██║   ██║   ██║██████╔╝
-    // ╚════██║██╔══╝     ██║   ██║   ██║██╔═══╝ 
-    // ███████║███████╗   ██║   ╚██████╔╝██║   
+    // ╚════██║██╔══╝     ██║   ██║   ██║██╔═══╝
+    // ███████║███████╗   ██║   ╚██████╔╝██║
 
 
     /**
@@ -250,9 +250,9 @@ nothrow:
     }
 
     /**
-        Given selected font and size of console screen, give a 
+        Given selected font and size of console screen, give a
         suggested output buffer size (in pixels).
-        However, this library will manage to render in whatever 
+        However, this library will manage to render in whatever
         buffer size you give, so this is completely optional.
     */
     int suggestedWidth()
@@ -309,7 +309,7 @@ nothrow:
         current.style = s;
     }
 
-    /** 
+    /**
         Save/restore state, that includes:
         - foreground color
         - background color
@@ -317,7 +317,7 @@ nothrow:
         - character style
 
         Note: This won't report stack errors.
-              You MUST pair your save/restore calls, or endure 
+              You MUST pair your save/restore calls, or endure
               eventual display bugs.
     */
     void save() pure
@@ -354,8 +354,8 @@ nothrow:
     }
     ///ditto
     TM_Font font() pure const
-    { 
-        return _font; 
+    {
+        return _font;
     }
 
     /**
@@ -396,11 +396,11 @@ nothrow:
                 r Red value, 0 to 255
                 g Green value, 0 to 255
                 b Blue value, 0 to 255
-                a Alpha value, 0 to 255. 
+                a Alpha value, 0 to 255.
 
         When used as background color, alpha is considered 255.
      */
-    void setPaletteEntry(int entry, 
+    void setPaletteEntry(int entry,
                          ubyte r, ubyte g, ubyte b, ubyte a) pure
     {
         rgba_t color = rgba_t(r, g, b, a);
@@ -412,10 +412,10 @@ nothrow:
         }
     }
     ///ditto
-    void getPaletteEntry(int entry, 
-                         out ubyte r, 
-                         out ubyte g, 
-                         out ubyte b, 
+    void getPaletteEntry(int entry,
+                         out ubyte r,
+                         out ubyte g,
+                         out ubyte b,
                          out ubyte a) pure const
     {
         r = _palette[entry].r;
@@ -425,7 +425,7 @@ nothrow:
     }
 
 
-    /** 
+    /**
         Set other options.
         Those control important rendering options, and changing those
         tend to redraw the whole buffer.
@@ -460,9 +460,9 @@ nothrow:
 
     /// ████████╗███████╗██╗  ██╗████████╗
     /// ╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
-    ///    ██║   █████╗   ╚███╔╝    ██║   
-    ///    ██║   ██╔══╝   ██╔██╗    ██║   
-    ///    ██║   ███████╗██╔╝ ██╗   ██║   
+    ///    ██║   █████╗   ╚███╔╝    ██║
+    ///    ██║   ██╔══╝   ██╔██╗    ██║
+    ///    ██║   ███████╗██╔╝ ██╗   ██║
     ///    ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝
 
 
@@ -488,14 +488,14 @@ nothrow:
     /**
         Print text to console at current cursor position.
         Text input MUST be UTF-8 or Unicode codepoint.
-        
+
         See_also: `render()`
     */
     void print(const(char)[] s) pure
     {
         foreach(dchar ch; s.byDchar())
         {
-            print(ch);            
+            print(ch);
         }
     }
     ///ditto
@@ -503,7 +503,7 @@ nothrow:
     {
         foreach(dchar ch; s.byDchar())
         {
-            print(ch);            
+            print(ch);
         }
     }
     ///ditto
@@ -511,7 +511,7 @@ nothrow:
     {
         foreach(dchar ch; s)
         {
-            print(ch);            
+            print(ch);
         }
     }
     ///ditto
@@ -524,7 +524,7 @@ nothrow:
         {
             TM_CharData* cdata = &_text[col + row * _columns];
             cdata.glyph = ch;
-            cdata.color = ( current.fg & 0x0f      ) 
+            cdata.color = ( current.fg & 0x0f      )
                         | ((current.bg & 0x0f) << 4);
             cdata.style = current.style;
             _dirtyValidation = true;
@@ -596,7 +596,7 @@ nothrow:
     ///ditto
     alias clearScreen = cls;
 
-    /** 
+    /**
         Change text cursor position. -1 indicate "keep".
         Do nothing for each dimension separately, if position is out
         of bounds.
@@ -609,7 +609,7 @@ nothrow:
     ///ditto
     void column(int x)
     {
-        if ((x >= 0) && (x < _columns)) 
+        if ((x >= 0) && (x < _columns))
             current.ccol = x;
     }
     ///ditto
@@ -627,7 +627,7 @@ nothrow:
         Accepted tags:
         - <COLORNAME> such as:
           <black> <red>      <green>   <orange>
-          <blue>  <magenta>  <cyan>    <lgrey> 
+          <blue>  <magenta>  <cyan>    <lgrey>
           <grey>  <lred>     <lgreen>  <yellow>
           <lblue> <lmagenta> <lcyan>   <white>
 
@@ -678,13 +678,13 @@ nothrow:
         Params:
              pixels    Start of output buffer.
     */
-    void outbuf(void*     pixels, 
-                int       width, 
-                int       height, 
+    void outbuf(void*     pixels,
+                int       width,
+                int       height,
                 ptrdiff_t pitchBytes)
         @system // memory-safe if pixels in that image addressable
     {
-        if (_outPixels != pixels || _outW != width  
+        if (_outPixels != pixels || _outW != width
             || _outH != height || _outPitch != pitchBytes)
         {
             _outPixels = pixels;
@@ -709,10 +709,10 @@ nothrow:
         Render console to output buffer. After this call, the output
         buffer is up-to-date with the changes in text buffer content.
 
-        Depending on the options, only the rectangle in 
+        Depending on the options, only the rectangle in
         `getUpdateRect()` will get updated.
     */
-    void render() 
+    void render()
         @system // memory-safe if `outbuf()` called and memory-safe
     {
         // 0. Recompute placement of text in post buffer.
@@ -726,13 +726,13 @@ nothrow:
         drawAllChars(textRect[0]);
 
         // from now on, consider _text and _back is up-to-date.
-        // this information of recency is still in textRect and 
+        // this information of recency is still in textRect and
         // _charDirty.
         _dirtyAllChars = false;
         _cache[] = _text[];
 
         // 3. Apply scale, character margins, etc.
-        // Take characters in _back and put them in _post, into the 
+        // Take characters in _back and put them in _post, into the
         // final resolution.
         // This only needs done for _charDirty chars.
         // Borders are drawn if _dirtyPost is true.
@@ -772,16 +772,16 @@ nothrow:
         if (_cachedBlinkOn != _blinkOn)
             _dirtyValidation = true;
         time = time % blinkTimeSecs;
-        if (time < 0) 
+        if (time < 0)
             time = 0;
         _elapsedTime = time;
     }
- 
-    // <dirty rectangles> 
+
+    // <dirty rectangles>
 
     /**
         Return if there is pending updates to draw.
-        
+
         This answer is only valid until the next `render()` call.
         Also invalidated if you print, change style, palette, or
         options, etc.
@@ -801,7 +801,7 @@ nothrow:
         Also invalidated if you print, change style, palette, or
         options, etc.
 
-        Note: In case of nothing to redraw, it's width and height 
+        Note: In case of nothing to redraw, it's width and height
               will be zero. Better use `hasPendingUpdate()`.
     */
     rect_t getUpdateRect()
@@ -828,7 +828,7 @@ nothrow:
     }
 
 
-    /** 
+    /**
         Convert pixel position to character position.
         Which character location is at pixel x,y ?
 
@@ -866,7 +866,7 @@ nothrow:
         return hit(cast(int)x, cast(int)y, column, row);
     }
 
-    // </dirty rectangles> 
+    // </dirty rectangles>
 
 
     ~this() @trusted
@@ -895,7 +895,7 @@ private:
     bool _cachedBlinkOn;
 
     // Palette
-    rgba_t[16] _palette = 
+    rgba_t[16] _palette =
     [
         rgba_t(  0,   0,   0,   0), rgba_t(128,   0,   0, 255),
         rgba_t(  0, 128,   0, 255), rgba_t(128, 128,   0, 255),
@@ -916,7 +916,7 @@ private:
     rect_t[2]  _lastBounds;   // last computed dirty rectangles
 
     // Size of bitmap backing buffer.
-    // In _back and _backFlags buffer, every character is rendered 
+    // In _back and _backFlags buffer, every character is rendered
     // next to each other without gaps.
     int _backWidth  = -1;
     int _backHeight = -1;
@@ -928,12 +928,12 @@ private:
     }
 
     // A buffer for effects, same size as outbuf (including borders)
-    // In _post/_blur/_emit/_emitH/_final buffers, scale is applied 
+    // In _post/_blur/_emit/_emitH/_final buffers, scale is applied
     // and also borders.
     int _postWidth  = -1;
     int _postHeight = -1;
     rgba_t[] _post  = null;
-    rgba32f_t[] _blur = null; // a buffer that is a copy of _post, 
+    rgba32f_t[] _blur = null; // a buffer that is a copy of _post,
                               // with only blur applied
     rgba_t[] _final  = null; // a buffer that compsite _post and _blur
 
@@ -1003,10 +1003,10 @@ private:
         // Find scale to multiply size of character by whole amount.
         // eg: scale == 2 => each font pixel becomes 2x2 pixel block.
         int scaleX = _outW / (_columns * charW);
-        if (scaleX < 1) 
+        if (scaleX < 1)
             scaleX = 1;
         int scaleY = _outH / (_rows    * charH);
-        if (scaleY < 1) 
+        if (scaleY < 1)
             scaleY = 1;
         int scale = (scaleX < scaleY) ? scaleX : scaleY;
 
@@ -1014,9 +1014,9 @@ private:
         int remX = _outW - (_columns * charW) * scale;
         int remY = _outH - (_rows    * charH) * scale;
         assert(remX <= _outW && remY <= _outH);
-        if (remX < 0) 
+        if (remX < 0)
             remX = 0;
-        if (remY < 0) 
+        if (remY < 0)
             remY = 0;
 
         int marginLeft;
@@ -1041,7 +1041,7 @@ private:
         if (   _outMarginLeft != marginLeft
             || _outMarginTop  != marginTop
             || _charMarginX   != charMarginX
-            || _charMarginY   != charMarginY 
+            || _charMarginY   != charMarginY
             || _outScaleX     != scale
             || _outScaleY     != scale)
         {
@@ -1054,9 +1054,9 @@ private:
             _outScaleX     = scale;
             _outScaleY     = scale;
 
-            float filterSize = charW * scale 
+            float filterSize = charW * scale
                             * _options.blurScale * 2.5f;
-            updateFilterSize( cast(int)(0.5f + filterSize) ); 
+            updateFilterSize( cast(int)(0.5f + filterSize) );
         }
     }
 
@@ -1068,9 +1068,9 @@ private:
             return r;
         int cw = charWidth();
         int ch = charHeight();
-        r.left   *= cw * _outScaleX; 
+        r.left   *= cw * _outScaleX;
         r.right  *= cw * _outScaleX;
-        r.top    *= ch * _outScaleY; 
+        r.top    *= ch * _outScaleY;
         r.bottom *= ch * _outScaleY;
         r = rectTranslate(r, _outMarginLeft, _outMarginTop);
         return rectIntersection(r, rectOutput());
@@ -1103,7 +1103,7 @@ private:
             _cache = (cast(TM_CharData*)alloc)[cells..2*cells];
 
             alloc = realloc_c17(_charDirty.ptr, cells * bool.sizeof);
-            _charDirty = (cast(bool*)alloc)[0..cells];            
+            _charDirty = (cast(bool*)alloc)[0..cells];
             _columns = columns;
             _rows    = rows;
             _dirtyAllChars = true;
@@ -1173,7 +1173,7 @@ private:
         }
     }
 
-    // Reasons to redraw: 
+    // Reasons to redraw:
     //  - their fg or bg color changed
     //  - their fg or bg color PALETTE changed
     //  - glyph displayed changed
@@ -1181,9 +1181,9 @@ private:
     //  - font changed
     //  - size changed
     //
-    // Returns: The rectangle of all text that needs to redrawn, 
+    // Returns: The rectangle of all text that needs to redrawn,
     //          in text coordinates.
-    //          And the rectangle of all text whose blue layer 
+    //          And the rectangle of all text whose blue layer
     //          needs to be redrawn, in text coordinates.
     rect_t[2] invalidateChars()
     {
@@ -1240,15 +1240,15 @@ private:
 
     // Draw all chars from _text to _back, no caching yet
     void drawAllChars(rect_t textRect)
-    { 
+    {
         for (int row = textRect.top; row < textRect.bottom; ++row)
-        { 
+        {
             for (int col = textRect.left; col < textRect.right; ++col)
-            { 
-                if (_charDirty[col + _columns * row]) 
-                    drawChar(col, row); 
-            } 
-        } 
+            {
+                if (_charDirty[col + _columns * row])
+                    drawChar(col, row);
+            }
+        }
     }
 
     // Draw from _back/_backFlags to _post/_emit
@@ -1278,13 +1278,13 @@ private:
             if (_options.borderShiny)
             {
                 _emit[] = linearU16Premul(border);
-                blurRect = rectWithCoords(0, 0, 
+                blurRect = rectWithCoords(0, 0,
                             _postWidth, _postHeight);
             }
             else
                 _emit[] = rgba16_t(0, 0, 0, 0);
 
-            postRect = rectWithCoords(0, 0, _postWidth, _postHeight);            
+            postRect = rectWithCoords(0, 0, _postWidth, _postHeight);
             textRect[0] = rectWithCoords(0, 0, _columns, _rows);
             textRect[1] = textRect[0];
         }
@@ -1318,7 +1318,7 @@ private:
         for (int y = row*ch; y < (row+1)*ch; ++y)
         {
             const(rgba_t)* backScan = &_back[backPitch * y];
-            const(ubyte)* backFlags = &_backFlags[backPitch * y]; 
+            const(ubyte)* backFlags = &_backFlags[backPitch * y];
 
             for (int x = col*cw; x < (col+1)*cw; ++x)
             {
@@ -1334,14 +1334,14 @@ private:
                     int posY = y * _outScaleY + yy + _outMarginTop;
                     if (posY >= _outH)
                         continue;
-                    
+
                     int start = posY * _outW;
                     rgba_t[]   postScan = _post[start..start+_outW];
                     rgba16_t[] emitScan = _emit[start..start+_outW];
 
                     for (int xx = 0; xx < _outScaleX; ++xx)
                     {
-                        int outX = x * _outScaleX 
+                        int outX = x * _outScaleX
                                  + xx + _outMarginLeft;
                         if (outX >= _outW)
                             continue;
@@ -1374,13 +1374,13 @@ private:
         {
             // No caching-case, redraw everything we now from _post.
             // The buffer content wasn't preserved, so we do it again.
-            changeRect = rectWithCoords(0, 0, _outW, _outH); 
+            changeRect = rectWithCoords(0, 0, _outW, _outH);
         }
 
         for (int y = changeRect.top; y < changeRect.bottom; ++y)
         {
             const(rgba_t)* postScan = &_final[_postWidth * y];
-            rgba_t*         outScan = cast(rgba_t*)(_outPixels 
+            rgba_t*         outScan = cast(rgba_t*)(_outPixels
                                                      + _outPitch * y);
 
             for (int x = changeRect.left; x < changeRect.right; ++x)
@@ -1442,7 +1442,7 @@ private:
                 pixels[0..cw] = bgCol; // speed-up empty lines
             }
             else
-            {   
+            {
                 for (int x = 0; x < cw; ++x)
                 {
                     bool on = (bits >> (cw - 1 - x)) & 1;
@@ -1485,12 +1485,12 @@ private:
         // the updated area is updateRect enlarged horizontally.
         for (int y = updateH.top; y < updateH.bottom; ++y)
         {
-            rgba16_t* emitScan  = &_emit[_postWidth * y]; 
-            
+            rgba16_t* emitScan  = &_emit[_postWidth * y];
+
             for (int x = updateH.left; x < updateH.right; ++x)
-            {  
+            {
                 int postWidth = _postWidth;
-                if (x < 0 || x >= _postWidth) 
+                if (x < 0 || x >= _postWidth)
                     assert(false);
                 __m128 mmC = _mm_setzero_ps();
 
@@ -1498,7 +1498,7 @@ private:
                 for (int n = -filter_2; n <= filter_2; ++n)
                 {
                     int xe = x + n;
-                    if (xe < 0 || xe >= _postWidth) 
+                    if (xe < 0 || xe >= _postWidth)
                         continue;
                     rgba16_t e = emitScan[xe];
                     __m128i mmE = _mm_setr_epi32(e.r, e.g, e.b, e.a);
@@ -1519,14 +1519,14 @@ private:
         // blur vertically
         for (int y = updateV.top; y < updateV.bottom; ++y)
         {
-            if (y < 0 || y >= _postHeight) 
+            if (y < 0 || y >= _postHeight)
                 assert(false);
- 
+
             rgba32f_t* blurScan = &_blur[_postWidth * y];
-            
-            for (int x = updateV.left; 
+
+            for (int x = updateV.left;
                      x < updateV.right; ++x)
-            { 
+            {
                 __m128 mmC = _mm_setzero_ps();
 
                 if (x < 0) assert(false);
@@ -1614,21 +1614,19 @@ private:
                     // PERF: SIMD
                     // Similar tonemapping as Dplug.
                     float tmThre  = 255.0f;
-                    float tmRatio = _options.tonemappingRatio; 
-                    float excessR = TM_max32f(0.0f, RGB.array[0] - tmThre);
-                    float excessG = TM_max32f(0.0f, RGB.array[1] - tmThre);
-                    float excessB = TM_max32f(0.0f, RGB.array[2] - tmThre);
-                    float exceedLuma = 0.3333f * excessR 
-                                     + 0.3333f * excessG
-                                     + 0.3333f * excessB;
+                    float tmRatio = _options.tonemappingRatio;
+                    float eR = TM_max32f(0.0f, RGB.array[0] - tmThre);
+                    float eG = TM_max32f(0.0f, RGB.array[1] - tmThre);
+                    float eB = TM_max32f(0.0f, RGB.array[2] - tmThre);
+                    float exceedLuma = 0.3333f * eR
+                                     + 0.3333f * eG
+                                     + 0.3333f * eB;
 
                     // Add excess energy in all channels
                     RGB.ptr[0] += exceedLuma * tmRatio;
                     RGB.ptr[1] += exceedLuma * tmRatio;
                     RGB.ptr[2] += exceedLuma * tmRatio;
                 }
-
-
                 post = _mm_cvttps_epi32(RGB);
                 post = _mm_packs_epi32(post, zero);
                 post = _mm_packus_epi16(post, zero); // clamped
@@ -1655,41 +1653,41 @@ struct rgba32f_t
     float r, g, b, a;
 }
 
-// 16x16 patch of 8-bit blue noise, tileable. 
+// 16x16 patch of 8-bit blue noise, tileable.
 // This is used over the whole buffer.
 private static immutable ubyte[256] NOISE_16x16 =
 [
-    127, 194, 167,  79,  64, 173,  22,  83, 
-    167, 105, 119, 250, 201,  34, 214, 145, 
-    233,  56,  13, 251, 203, 124, 243,  42, 
-    216,  34,  73, 175, 133,  64, 185,  73, 
-     93, 156, 109, 144,  34,  98, 153, 138, 
+    127, 194, 167,  79,  64, 173,  22,  83,
+    167, 105, 119, 250, 201,  34, 214, 145,
+    233,  56,  13, 251, 203, 124, 243,  42,
+    216,  34,  73, 175, 133,  64, 185,  73,
+     93, 156, 109, 144,  34,  98, 153, 138,
     187, 238, 155,  46,  13, 102, 247,   0,
-     28, 180,  46, 218, 183,  13, 212,  69,  
-     13,  92, 126, 228, 211, 161, 117, 197, 
-    134, 240, 121,  75, 234,  88,  53, 170, 
+     28, 180,  46, 218, 183,  13, 212,  69,
+     13,  92, 126, 228, 211, 161, 117, 197,
+    134, 240, 121,  75, 234,  88,  53, 170,
     109, 204,  59,  22,  86, 141,  38, 222,
-     81, 205,  13,  59, 160, 198, 129, 252,  
+     81, 205,  13,  59, 160, 198, 129, 252,
       0, 147, 176, 193, 244,  71, 173,  56,
-     22, 168, 104, 139,  22, 114,  38, 220, 
-    101, 231,  77,  34, 113,  13, 189,  96, 
-    253, 148, 227, 190, 246, 174,  66, 155,  
-     28,  50, 164, 131, 217, 151, 232, 128, 
+     22, 168, 104, 139,  22, 114,  38, 220,
+    101, 231,  77,  34, 113,  13, 189,  96,
+    253, 148, 227, 190, 246, 174,  66, 155,
+     28,  50, 164, 131, 217, 151, 232, 128,
     115,  69,  34,  50,  93,  13, 209,  85,
     192, 120, 248,  64,  90,  28, 208,  42,
-      0, 200, 215,  79, 125, 148, 239, 136, 
+      0, 200, 215,  79, 125, 148, 239, 136,
     181,  22, 206,  13, 185, 108,  59, 179,
-     90, 130, 159, 182, 235,  42, 106,   0,  
-     56,  99, 226, 140, 157, 237,  77, 165, 
-    249,  28, 105,  13,  61, 170, 224,  75, 
-    202, 163, 114,  81,  46,  22, 137, 223, 
-    189,  53, 219, 142, 196,  28, 122, 154, 
-    254,  42,  28, 242, 196, 210, 119,  38, 
-    149,  86, 118, 245,  71,  96, 213,  13,  
-     88, 178,  66, 129, 171,   0,  99,  69, 
-    178,  13, 207,  38, 159, 187,  50, 132, 
+     90, 130, 159, 182, 235,  42, 106,   0,
+     56,  99, 226, 140, 157, 237,  77, 165,
+    249,  28, 105,  13,  61, 170, 224,  75,
+    202, 163, 114,  81,  46,  22, 137, 223,
+    189,  53, 219, 142, 196,  28, 122, 154,
+    254,  42,  28, 242, 196, 210, 119,  38,
+    149,  86, 118, 245,  71,  96, 213,  13,
+     88, 178,  66, 129, 171,   0,  99,  69,
+    178,  13, 207,  38, 159, 187,  50, 132,
     236, 146, 191,  95,  53, 229, 163, 241,
-     46, 225, 102, 135,   0, 230, 110, 199,  
+     46, 225, 102, 135,   0, 230, 110, 199,
      61,   0, 221,  22, 150,  83, 112, 22
 ];
 
@@ -1788,7 +1786,7 @@ const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
         if (glyph >= fontData[r].start && glyph < fontData[r].stop)
         {
             TM_RangeFlags flags = fontData[r].flags;
-            
+
             if ( (flags & TM_singleGlyph) != 0)
                 return fontData[r].glyphData[0..ch];
 
@@ -1804,7 +1802,7 @@ const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
 
 static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
 [
-    TM_FontDesc([8, 8], 
+    TM_FontDesc([8, 8],
     [
         TM_UnicodeRange(0x0000, 0x0020, EMPTY, TM_singleGlyph),
         TM_UnicodeRange(0x0020, 0x0080, BASIC_LATIN),
@@ -1820,14 +1818,14 @@ static immutable ubyte[8] EMPTY =
     // All control chars have that same empty glyph
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 ];
-    
+
 static immutable ubyte[8] NOT_DEF =
 [
     0x78, 0xcc, 0x0c, 0x18, 0x30, 0x00, 0x30, 0x00, // ?
 ];
 
 static immutable ubyte[96 * 8] BASIC_LATIN =
-[    
+[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+0020 Space
     0x30, 0x78, 0x78, 0x30, 0x30, 0x00, 0x30, 0x00, // U+0021 !
     0x6c, 0x6c, 0x6c, 0x00, 0x00, 0x00, 0x00, 0x00, // U+0022 "
@@ -1846,7 +1844,7 @@ static immutable ubyte[96 * 8] BASIC_LATIN =
     0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0, 0x80, 0x00, // U+002F /
     0x7c, 0xc6, 0xce, 0xde, 0xf6, 0xe6, 0x7c, 0x00, // U+0030 0
     0x30, 0x70, 0x30, 0x30, 0x30, 0x30, 0xfc, 0x00, // U+0031 1
-    0x78, 0xcc, 0x0c, 0x38, 0x60, 0xcc, 0xfc, 0x00, // U+0032 2 
+    0x78, 0xcc, 0x0c, 0x38, 0x60, 0xcc, 0xfc, 0x00, // U+0032 2
     0x78, 0xcc, 0x0c, 0x38, 0x0c, 0xcc, 0x78, 0x00, // U+0033 3
     0x1c, 0x3c, 0x6c, 0xcc, 0xfe, 0x0c, 0x1e, 0x00, // U+0034 4
     0xfc, 0xc0, 0xf8, 0x0c, 0x0c, 0xcc, 0x78, 0x00, // U+0035 5
@@ -1928,12 +1926,12 @@ static immutable ubyte[96 * 8] BASIC_LATIN =
 
 static immutable ubyte[96 * 8] LATIN1_SUPP =
 [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00A0 NBSP
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00A0 ' '
     0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x18, 0x00, // U+00A1 ¡
     0x18, 0x18, 0x7e, 0xc0, 0xc0, 0x7e, 0x18, 0x18, // U+00A2 ¢
     0x38, 0x6c, 0x64, 0xf0, 0x60, 0xe6, 0xfc, 0x00, // U+00A3 £
     0x00, 0x84, 0x78, 0xcc, 0xcc, 0x78, 0x84, 0x00, // U+00A4 ¤
-    0x30, 0x30, 0x00, 0x78, 0xcc, 0xfc, 0xcc, 0x00, // U+00A5 Å
+    0xcc, 0xcc, 0x78, 0xfc, 0x30, 0xfc, 0x30, 0x30, // U+00A5 ¥
     0x18, 0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x00, // U+00A6 |
     0x3c, 0x60, 0x78, 0x6c, 0x6c, 0x3c, 0x0c, 0x78, // U+00A7 §
     0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00A8 ¨
@@ -1948,11 +1946,26 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x30, 0x30, 0xfc, 0x30, 0x30, 0x00, 0xfc, 0x00, // U+00B1 +-
     0x70, 0x18, 0x30, 0x60, 0x78, 0x00, 0x00, 0x00, // U+00B2 ²
     0x70, 0x18, 0x30, 0x18, 0x70, 0x00, 0x00, 0x00, // U+00B3 ³
+    0x0C, 0x18, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, // U+00B4 ´
+    0x00, 0x66, 0x66, 0x66, 0x66, 0x7c, 0x60, 0xc0, // U+00B5 µ
+    0x7f, 0xdb, 0xdb, 0x7b, 0x1b, 0x1b, 0x1b, 0x00, // U+00B6 ¶
+    0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, // U+00B7 ·
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x0c, 0x38, // U+00B8 ¸
+    0x30, 0x70, 0x30, 0x30, 0x78, 0x00, 0x00, 0x00, // U+00B9 ¹
+    0x38, 0x6c, 0x6c, 0x38, 0x00, 0x7c, 0x00, 0x00, // U+00BA º
+    0x00, 0xcc, 0x66, 0x33, 0x66, 0xcc, 0x00, 0x00, // U+00BB »
+    0xc3, 0xc6, 0xcc, 0xdb, 0x37, 0x6f, 0xcf, 0x03, // U+00BC ¼
+    0xc3, 0xc6, 0xcc, 0xde, 0x33, 0x66, 0xcc, 0x0f, // U+00BD ½
+    0xe3, 0x36, 0x6c, 0x3b, 0xf7, 0x6f, 0xcf, 0x03, // U+00BE ¾
+    0x30, 0x00, 0x30, 0x60, 0xc0, 0xcc, 0x78, 0x00, // U+00BF ¿
 ];
 
 /* CP437 upper range
     0x00, 0x10, 0x38, 0x6c, 0xc6, 0xc6, 0xfe, 0x00, // U+2302 ⌂
+    0xc6, 0x38, 0x6c, 0xc6, 0xfe, 0xc6, 0xc6, 0x00, // U+00C4 Ä
+    0x3e, 0x6c, 0xcc, 0xfe, 0xcc, 0xcc, 0xce, 0x00, // U+00C6 Æ
     0x78, 0xcc, 0xc0, 0xcc, 0x78, 0x18, 0x0c, 0x78, // U+00C7 Ç
+    0x1c, 0x00, 0xfc, 0x60, 0x78, 0x60, 0xfc, 0x00, // U+00C9 É
     0x00, 0xcc, 0x00, 0xcc, 0xcc, 0xcc, 0x7e, 0x00, // U+00FC ü
     0x1c, 0x00, 0x78, 0xcc, 0xfc, 0xc0, 0x78, 0x00, // U+00E9 é
     0x7e, 0xc3, 0x3c, 0x06, 0x3e, 0x66, 0x3f, 0x00, // U+00E2 â
@@ -1966,11 +1979,12 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0xcc, 0x00, 0x70, 0x30, 0x30, 0x30, 0x78, 0x00, // U+00EF ï
     0x7c, 0xc6, 0x38, 0x18, 0x18, 0x18, 0x3c, 0x00, // U+00EE î
     0xe0, 0x00, 0x70, 0x30, 0x30, 0x30, 0x78, 0x00, // U+00EC ì
-    0xc6, 0x38, 0x6c, 0xc6, 0xfe, 0xc6, 0xc6, 0x00, // U+00C4 Ä
     
-    0x1c, 0x00, 0xfc, 0x60, 0x78, 0x60, 0xfc, 0x00, // U+00C9 É
+
+    
+    
     0x00, 0x00, 0x7f, 0x0c, 0x7f, 0xcc, 0x7f, 0x00, // U+00E6 æ
-    0x3e, 0x6c, 0xcc, 0xfe, 0xcc, 0xcc, 0xce, 0x00, // U+00C6 Æ
+    
     0x78, 0xcc, 0x00, 0x78, 0xcc, 0xcc, 0x78, 0x00, // U+00F4 ô
     0x00, 0xcc, 0x00, 0x78, 0xcc, 0xcc, 0x78, 0x00, // U+00F6 ö
     0x00, 0xe0, 0x00, 0x78, 0xcc, 0xcc, 0x78, 0x00, // U+00F2 ò
@@ -1980,7 +1994,6 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0xc3, 0x18, 0x3c, 0x66, 0x66, 0x3c, 0x18, 0x00, // U+00D6 Ö
     0xcc, 0x00, 0xcc, 0xcc, 0xcc, 0xcc, 0x78, 0x00, // U+00DC Ü
     
-    0xcc, 0xcc, 0x78, 0xfc, 0x30, 0xfc, 0x30, 0x30, // U+00A5 ¥
     0xf8, 0xcc, 0xcc, 0xfa, 0xc6, 0xcf, 0xc6, 0xc7, // U+20A7 ₧
     0x0e, 0x1b, 0x18, 0x3c, 0x18, 0x18, 0xd8, 0x70, // U+0192 ƒ
     0x1c, 0x00, 0x78, 0x0c, 0x7c, 0xcc, 0x7e, 0x00, // U+00E1 á
@@ -1989,16 +2002,10 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x00, 0x1c, 0x00, 0xcc, 0xcc, 0xcc, 0x7e, 0x00, // U+00DA ú
     0x00, 0xf8, 0x00, 0xf8, 0xcc, 0xcc, 0xcc, 0x00, // U+00F1 ñ
     0xfc, 0x00, 0xcc, 0xec, 0xfc, 0xdc, 0xcc, 0x00, // U+00D1 Ñ
-    
-    0x38, 0x6c, 0x6c, 0x38, 0x00, 0x7c, 0x00, 0x00, // U+00BA º
-    0x30, 0x00, 0x30, 0x60, 0xc0, 0xcc, 0x78, 0x00, // U+00BF ¿
+
     0x00, 0x00, 0x00, 0xfc, 0xc0, 0xc0, 0x00, 0x00, // U+2310 ⌐
-    0x00, 0x00, 0x00, 0xfc, 0x0c, 0x0c, 0x00, 0x00, // U+00AC ¬
-    0xc3, 0xc6, 0xcc, 0xde, 0x33, 0x66, 0xcc, 0x0f, // U+00BD ½
-    0xc3, 0xc6, 0xcc, 0xdb, 0x37, 0x6f, 0xcf, 0x03, // U+00BC ¼
-    
-    0x00, 0x33, 0x66, 0xcc, 0x66, 0x33, 0x00, 0x00, // U+00AB «
-    0x00, 0xcc, 0x66, 0x33, 0x66, 0xcc, 0x00, 0x00, // U+00BB »
+
+
     0x22, 0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88, // U+2591 ░
     0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, // U+2592 ▒
     0xdb, 0x77, 0xdb, 0xee, 0xdb, 0x77, 0xdb, 0xee, // U+2593 ▓
@@ -2053,7 +2060,7 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x00, 0xfe, 0x6c, 0x6c, 0x6c, 0x6c, 0x6c, 0x00, // U+03C0
     0xfc, 0xcc, 0x60, 0x30, 0x60, 0xcc, 0xfc, 0x00, // U+03A3
     0x00, 0x00, 0x7e, 0xd8, 0xd8, 0xd8, 0x70, 0x00, // U+03C3
-    0x00, 0x66, 0x66, 0x66, 0x66, 0x7c, 0x60, 0xc0, // U+00B5 µ
+
     0x00, 0x76, 0xdc, 0x18, 0x18, 0x18, 0x18, 0x00, // U+03C4
     0xfc, 0x30, 0x78, 0xcc, 0xcc, 0x78, 0x30, 0xfc, // U+03A6
     0x38, 0x6c, 0xc6, 0xfe, 0xc6, 0x6c, 0x38, 0x00, // U+0398
@@ -2064,7 +2071,7 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x38, 0x60, 0xc0, 0xf8, 0xc0, 0x60, 0x38, 0x00, // U+03B5
     0x78, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0x00, // U+2229
     0x00, 0xfc, 0x00, 0xfc, 0x00, 0xfc, 0x00, 0x00, // U+2261
-    
+
     0x60, 0x30, 0x18, 0x30, 0x60, 0x00, 0xfc, 0x00, // U+2265 >=
     0x18, 0x30, 0x60, 0x30, 0x18, 0x00, 0xfc, 0x00, // U+2264 <=
     0x0e, 0x1b, 0x1b, 0x18, 0x18, 0x18, 0x18, 0x18, // U+2320
@@ -2073,12 +2080,11 @@ static immutable ubyte[96 * 8] LATIN1_SUPP =
     0x00, 0x76, 0xdc, 0x00, 0x76, 0xdc, 0x00, 0x00, // U+2248
     0x38, 0x6c, 0x6c, 0x38, 0x00, 0x00, 0x00, 0x00, // U+00B0
     0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00, // U+2219
-    0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, // U+00B7
+    
     0x0f, 0x0c, 0x0c, 0x0c, 0xec, 0x6c, 0x3c, 0x1c, // U+221A
     0x78, 0x6c, 0x6c, 0x6c, 0x6c, 0x00, 0x00, 0x00, // U+207F
-    
+
     0x00, 0x00, 0x3c, 0x3c, 0x3c, 0x3c, 0x00, 0x00, // U+25A0
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // U+00A0
     */
 
 /*
@@ -2190,9 +2196,9 @@ private:
 
     void setColor(int col, bool bg) nothrow @nogc
     {
-        if (bg) 
+        if (bg)
             console.bg(col);
-        else 
+        else
             console.fg(col);
     }
 
@@ -2230,12 +2236,12 @@ private:
             default:
                 {
                     bool bg = false;
-                    if ((tagName.length >= 3) 
+                    if ((tagName.length >= 3)
                         && (tagName[0..3] == "on_"))
                     {
                         tagName = tagName[3..$];
                         bg = true;
-                    }       
+                    }
 
                     switch(tagName)
                     {
@@ -2299,7 +2305,7 @@ private:
     {
         tagOpen,      // <red>
         tagClose,     // </red>
-        tagOpenClose, // <red/> 
+        tagOpenClose, // <red/>
         text,
         endOfInput
     }
@@ -2309,7 +2315,7 @@ private:
         TokenType type;
 
         // name of tag, or text
-        const(char)[] text = null; 
+        const(char)[] text = null;
 
         // position in input text
         int inputPos = 0;
@@ -2360,7 +2366,7 @@ private:
             next;
             if (!hasNextChar())
             {
-                // input terminate on "<", return end of input 
+                // input terminate on "<", return end of input
                 // instead of error
                 r.type = TokenType.endOfInput;
                 return r;
@@ -2373,7 +2379,7 @@ private:
                 next;
                 if (!hasNextChar())
                 {
-                    // input terminate on "</", return end of input 
+                    // input terminate on "</", return end of input
                     // instead of error
                     r.type = TokenType.endOfInput;
                     return r;
@@ -2400,7 +2406,7 @@ private:
                     next;
                     if (!hasNextChar())
                     {
-                        // tag is malformed such as: <like-that/ 
+                        // tag is malformed such as: <like-that/
                         // ignore the whole tag
                         r.type = TokenType.endOfInput;
                         return r;
@@ -2475,7 +2481,7 @@ private:
                         case "lt": r.text = "<"; break;
                         case "gt": r.text = ">"; break;
                         case "amp": r.text = "&"; break;
-                        default: 
+                        default:
                             // unknown entity, ignore
                             goto nothing;
                     }
@@ -2483,7 +2489,7 @@ private:
                     r.type = TokenType.text;
                     return r;
                 }
-                else if ((ch >= 'a' && ch <= 'z') 
+                else if ((ch >= 'a' && ch <= 'z')
                       || (ch >= 'a' && ch <= 'z')) // TODO suspicious
                 {
                     next;
@@ -2497,7 +2503,7 @@ private:
 
             nothing:
 
-            // do nothing, ignore an unrecognized entity or empty one, 
+            // do nothing, ignore an unrecognized entity or empty one,
             // but terminate input
             {
                 // input terminate on "<", return end of input instead
@@ -2505,9 +2511,9 @@ private:
                 r.type = TokenType.endOfInput;
                 return r;
             }
-            
+
         }
-        else 
+        else
         {
             int startOfText = inputPos;
             while(hasNextChar())
@@ -2515,10 +2521,10 @@ private:
                 char ch = peek();
 
                 // Note: > accepted here without escaping.
-                    
-                if (ch == '<') 
+
+                if (ch == '<')
                     break;
-                if (ch == '&') 
+                if (ch == '&')
                     break;
                 next;
             }
@@ -2532,9 +2538,9 @@ private:
 
 
 // Make 1D separable gaussian kernel
-void makeGaussianKernel(int len, 
-                        float sigma, 
-                        float mu, 
+void makeGaussianKernel(int len,
+                        float sigma,
+                        float mu,
                         float[] outtaps) pure
 {
     assert( (len % 2) == 1);

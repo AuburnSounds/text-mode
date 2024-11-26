@@ -1,6 +1,7 @@
 /**
     A library for integer coord rectangles, and list of those.
     In UI and rendering, useful for caching computation.
+    Also port of stb's stretchy buffers.
 */
 module rectlist;
 
@@ -181,7 +182,7 @@ rect_t rectMergeWithPoint(const(rect_t) a, int x, int y) {
 }
 
 /**
-    Returns: `true` if none of the rectangles overlap with each 
+    Returns: `true` if none of the rectangles overlap with each
     other. VERY INEFFICIENT, keep it for debug purpose.
 */
 bool rectHaveNoOverlap(const(rect_t)[] rects) {
@@ -208,7 +209,7 @@ rect_t rectTranslate(rect_t r, int dx, int dy) {
 
 
 /**
-    Returns: This rectangle, extended on all sides by the given 
+    Returns: This rectangle, extended on all sides by the given
     amount.
 */
 rect_t rectGrow(rect_t r, int amount) {
@@ -221,7 +222,7 @@ rect_t rectGrow(rect_t r, int amount) {
 
 
 /**
-    Returns: This rectangle, extended by different amounts 
+    Returns: This rectangle, extended by different amounts
     horizontally and vertically.
 */
 rect_t rectGrowXY(rect_t r, int amtX, int amtY) {
@@ -234,7 +235,7 @@ rect_t rectGrowXY(rect_t r, int amtX, int amtY) {
 
 
 /*
-_____ _____ _____ _____ __    _  _____ _____ 
+ _____ _____ _____ _____ __    _  _____ _____
 | __  |   __|     |_   _|  |  | ||   __|_   _|
 |    -|   __|   --| | | |  |__| ||__   | | |
 |__|__|_____|_____| |_| |_____|_||_____| |_|
@@ -289,7 +290,7 @@ int rectlistCount(ref const(rectlist_t) rl) @trusted {
 /**
     Return nth items of list.
 */
-ref inout(rect_t) rectlistNth(ref inout(rectlist_t) rl, int nth) 
+ref inout(rect_t) rectlistNth(ref inout(rectlist_t) rl, int nth)
     @trusted {
     return rl.rects[nth];
 }
@@ -304,7 +305,7 @@ void rectlistClear(ref rectlist_t rl) @trusted {
 /**
     Returns: rectangles in the list as a slice.
 */
-inout(rect_t)[] rectlistRectangles(ref inout(rectlist_t) rl) 
+inout(rect_t)[] rectlistRectangles(ref inout(rectlist_t) rl)
 @trusted {
     int count = rectlistCount(rl);
     if (count == 0) return [];
@@ -325,7 +326,7 @@ rect_t rectlistBounds(ref const(rectlist_t) rl) @trusted {
 }
 
 /**
-    Returns: `true` if none of the rectangles overlap with each 
+    Returns: `true` if none of the rectangles overlap with each
     other. VERY INEFFICIENT, keep it for debug purpose.
 */
 bool rectlistHasNoOverlap(ref const(rectlist_t) rl) {
@@ -368,7 +369,7 @@ void rectlistRemoveOverlapping(ref rectlist_t input,
             rect_t B = rectlistNth(input, j);
             rect_t C = rectIntersection(A, B);
             if ( ! rectIsEmpty(C)) {
-                // Case 1: A contains B 
+                // Case 1: A contains B
                 // => B is removed from input
                 if (rectContainsRect(A, B)) {
                     // Remove that box since it has been dealt with
@@ -407,7 +408,7 @@ void rectlistRemoveOverlapping(ref rectlist_t input,
                             return w < h ? w : h;
                         }
 
-                        static int evalSplit(rect_t r0, rect_t r1, 
+                        static int evalSplit(rect_t r0, rect_t r1,
                                              rect_t r2, rect_t r3) {
                             int s0 = minOfWidthHeight(r0);
                             int s1 = minOfWidthHeight(r1);
@@ -451,20 +452,20 @@ unittest {
     rectlist_t ab;
     rectlistRemoveOverlapping(rl, ab);
 
-    assert(rectlistRectangles(ab) == 
-           [ rect_t(2, 2, 6, 6), 
-             rect_t(0, 0, 4, 2), 
+    assert(rectlistRectangles(ab) ==
+           [ rect_t(2, 2, 6, 6),
+             rect_t(0, 0, 4, 2),
              rect_t(0, 2, 2, 4) ]
           ||
-          rectlistRectangles(ab) == 
-           [ rect_t(2, 2, 6, 6), 
-             rect_t(0, 0, 2, 4), 
+          rectlistRectangles(ab) ==
+           [ rect_t(2, 2, 6, 6),
+             rect_t(0, 0, 2, 4),
              rect_t(2, 0, 4, 2) ]);
     assert(rectlistBounds(ab) == rect_t(0, 0, 6, 6));
 }
 
 
-/** 
+/**
     Make 4 boxes that are A without C (C is contained in A)
     Some may be empty though since C touch at least one edge of A.
 
@@ -472,7 +473,7 @@ unittest {
     +---------+               +---------+
     |    A    |               |    D    |
     |  +---+  |   After split +--+---+--+
-    |  | C |  |        =>     | E|   |F |   
+    |  | C |  |        =>     | E|   |F |
     |  +---+  |               +--+---+--+
     |         |               |    G    |
     +---------+               +---------+
@@ -492,13 +493,13 @@ void rectSubtractionH(rect_t A, rect_t C,
 +---------+               +---------+
 |    A    |               |  | E |  |
 |  +---+  |   After split +  +---+  +
-|  | C |  |        =>     | D|   |G |   
+|  | C |  |        =>     | D|   |G |
 |  +---+  |               +  +---+  +
 |         |               |  | F |  |
 +---------+               +---------+
 */
-void rectSubtractionV(rect_t A, rect_t C, 
-                      out rect_t D, out rect_t E, 
+void rectSubtractionV(rect_t A, rect_t C,
+                      out rect_t D, out rect_t E,
                       out rect_t F, out rect_t G)
 {
     D = rectWithCoords(A.left, A.top, C.left, A.bottom);
@@ -509,7 +510,7 @@ void rectSubtractionV(rect_t A, rect_t C,
 
 
 /*
-_____ _____ _____ _____ _____ _____ _____ 
+ _____ _____ _____ _____ _____ _____ _____
 | __  |  |  |   __|   __|   __| __  |   __|
 | __ -|  |  |   __|   __|   __|    -|__   |
 |_____|_____|__|  |__|  |_____|__|__|_____|
@@ -534,16 +535,16 @@ public @system
     /**
         Push back one item in stretchy buffer.
     */
-    void sb_push(T)(scope ref T* a, T v) { 
-        sb_maybegrow(a,1); a[sb_n(a)++] = v; 
-    }    
+    void sb_push(T)(scope ref T* a, T v) {
+        sb_maybegrow(a,1); a[sb_n(a)++] = v;
+    }
 
     /**
         Free the stretchy buffer. It becomes `null`.
     */
-    void sb_free(T)(scope ref T* a) { 
-        if (a) free(sb_raw(a)); 
-        a = null; 
+    void sb_free(T)(scope ref T* a) {
+        if (a) free(sb_raw(a));
+        a = null;
     }
 
     /**
@@ -578,10 +579,10 @@ private @system
     }
     ref int sb_m(T)(scope T* a) { return sb_raw(a)[0]; }
     ref int sb_n(T)(scope T* a) { return sb_raw(a)[1]; }
-    bool sb_needgrow(T)(scope T* a, int n) { 
+    bool sb_needgrow(T)(scope T* a, int n) {
         return (a == null) || (sb_n(a) + n >= sb_m(a));
     }
-    void* sb_maybegrow(T)(scope ref T* a, int n) { 
+    void* sb_maybegrow(T)(scope ref T* a, int n) {
         return sb_needgrow(a, n) ? sb_grow(a, n) : null;
     }
     void* sb_grow(T)(scope ref T* a, int n) {
@@ -601,7 +602,7 @@ private @system
     }
 }
 
-@trusted unittest 
+@trusted unittest
 {
     int i;
     int *arr;
@@ -612,4 +613,3 @@ private @system
         assert(arr[i] == i);
     sb_free(arr);
 }
-
