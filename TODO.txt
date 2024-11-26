@@ -1,0 +1,4 @@
+- uses rect clipping to avoid early continue in loops
+- blur rectangles could be rectlist
+- stack blur sometimes win a bit
+- more characters!
