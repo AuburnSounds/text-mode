@@ -54,8 +54,8 @@ class TermExample : TurtleGame
             save();
 
             // Change foreground color (0 to 15)
-            fg(TM_red);
-            print("This is red text ");
+            fg(TM_white);
+            print("◀ ◁ ◂ ◃ ◄ ◅ ◆ ◇ ◈ ◉ ◊ ○ ◌ ◍ ◎ ●");
             bg(TM_blue);
             println("on blue background");
 
