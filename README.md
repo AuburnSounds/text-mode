@@ -223,5 +223,5 @@ console.charAt(0, 0).style = 0;
  - [x] 00A0 — 00FF: Latin-1 Supplement
  - [x] 2500 — 257F: Box Drawing
  - [x] 2580 — 259F: Block Elements
- - [ ] 25A0 — 25FF: Geometric Shapes
+ - [x] 25A0 — 25FF: Geometric Shapes
 
