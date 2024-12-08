@@ -504,8 +504,8 @@ nothrow:
         ///ditto
         void setPaletteEntry(int entry, Color c)
         {
-            RGBA8 c = c.toRGBA8();
-            setPaletteEntry(entry, c.r, c.g, c.b, c.a);
+            RGBA8 q = c.toRGBA8();
+            setPaletteEntry(entry, q.r, q.g, q.b, q.a);
         }
     }
 
