@@ -91,7 +91,6 @@ enum : TM_Style
 alias TM_BoxStyle = dchar[8];
 
 /**
-    A box style that looks like that:
     ┌──┐
     │  │
     └──┘
@@ -99,7 +98,6 @@ alias TM_BoxStyle = dchar[8];
 enum TM_BoxStyle TM_boxThin = "┌─┐││└─┘"d;
 
 /**
-    A box style that looks like that:
     ┏━━┓
     ┃  ┃
     ┗━━┛
@@ -107,15 +105,6 @@ enum TM_BoxStyle TM_boxThin = "┌─┐││└─┘"d;
 enum TM_BoxStyle TM_boxLarge = "┏━┓┃┃┗━┛"d;
 
 /**
-    A box style that looks like that:
-    ┎──┒
-    ┃  ┃
-    ┖──┚
-*/
-enum TM_BoxStyle TM_boxLargeW = "┎─┒┃┃┖─┚"d;
-
-/**
-    A box style that looks like that:
     ┍━━┑
     │  │
     ┕━━┙
@@ -123,12 +112,40 @@ enum TM_BoxStyle TM_boxLargeW = "┎─┒┃┃┖─┚"d;
 enum TM_BoxStyle TM_boxLargeH = "┍━┑││┕━┙"d;
 
 /**
-    A box style that looks like that:
+    ┎──┒
+    ┃  ┃
+    ┖──┚
+*/
+enum TM_BoxStyle TM_boxLargeV = "┎─┒┃┃┖─┚"d;
+
+/**
     ▛▀▀▜
     ▌  ▐
     ▙▄▄▟
 */
 enum TM_BoxStyle TM_boxHeavy = "▛▀▜▌▐▙▄▟"d;
+
+/**
+    ◢██◣
+    █  █
+    ◥██◤
+*/
+enum TM_BoxStyle TM_boxHeavyPlus = "◢█◣██◥█◤"d;
+
+
+/**
+    ╔══╗
+    ║  ║
+    ╚══╝
+*/
+enum TM_BoxStyle TM_boxDouble = "╔═╗║║╚═╝"d;
+
+/**
+    ╒══╕
+    ┃  ┃
+    ╘══╛
+*/
+enum TM_BoxStyle TM_boxDoubleH = "╒═╕┃┃╘═╛"d;
 
 
 /**

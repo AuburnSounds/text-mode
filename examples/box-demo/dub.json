@@ -1,0 +1,9 @@
+{
+  "name": "box-demo",
+  "targetType": "executable",
+  "dependencies": {
+    "turtle": "~>0.0",
+    "text-mode" : { "path" : "../.." }
+  },
+  "versions": [ "SDL_209" ]
+}
