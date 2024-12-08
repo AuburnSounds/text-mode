@@ -63,7 +63,7 @@ class TermExample : TurtleGame
             demo( 1, 20, TM_yellow,TM_boxLargeV,    "TM_boxLargeV");
             demo(21,  2, TM_lblue, TM_boxHeavy,     "TM_boxHeavy");
             demo(21,  8, TM_lcyan, TM_boxHeavyPlus, "TM_boxHeavyPlus");
-            demo(21, 14, TM_yellow, TM_boxDouble,    "TM_boxDouble");
+            demo(21, 14, TM_yellow, TM_boxDouble,   "TM_boxDouble");
             demo(21, 20, TM_white, TM_boxDoubleH,   "TM_boxDoubleH");
             render();
         }
