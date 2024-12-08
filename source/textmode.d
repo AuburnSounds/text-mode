@@ -86,6 +86,52 @@ enum : TM_Style
 }
 
 /**
+    A box style is composed of 8 glyphs.
+*/
+alias TM_BoxStyle = dchar[8];
+
+/**
+    A box style that looks like that:
+    ┌──┐
+    │  │
+    └──┘
+*/
+enum TM_BoxStyle TM_boxThin = "┌─┐││└─┘"d;
+
+/**
+    A box style that looks like that:
+    ┏━━┓
+    ┃  ┃
+    ┗━━┛
+*/
+enum TM_BoxStyle TM_boxLarge = "┏━┓┃┃┗━┛"d;
+
+/**
+    A box style that looks like that:
+    ┎──┒
+    ┃  ┃
+    ┖──┚
+*/
+enum TM_BoxStyle TM_boxLargeW = "┎─┒┃┃┖─┚"d;
+
+/**
+    A box style that looks like that:
+    ┍━━┑
+    │  │
+    ┕━━┙
+*/
+enum TM_BoxStyle TM_boxLargeH = "┍━┑││┕━┙"d;
+
+/**
+    A box style that looks like that:
+    ▛▀▀▜
+    ▌  ▐
+    ▙▄▄▟
+*/
+enum TM_BoxStyle TM_boxHeavy = "▛▀▜▌▐▙▄▟"d;
+
+
+/**
     Predefined palettes (default: vintage is loaded).
     You can either load a predefined palette, or change colors
     individually.
@@ -546,8 +592,7 @@ nothrow:
         {
             TM_CharData* cdata = &_text[col + row * _columns];
             cdata.glyph = ch;
-            cdata.color = ( current.fg & 0x0f      )
-                        | ((current.bg & 0x0f) << 4);
+            cdata.color = current.colorByte;
             cdata.style = current.style;
             _dirtyValidation = true;
         }
@@ -681,6 +726,60 @@ nothrow:
         cprint(s);
         newline();
     }
+
+    /**
+        Fill a rectangle with a character, using the current 
+        foreground and background colors.
+
+        This doesn't use, nor change, cursor position.
+     */
+    void fillRect(int x, int y, int w, int h, dchar ch) pure
+    {
+        if (w < 0 || h < 0)
+            return;
+
+        for (int row = y; row < y + h; ++row)
+        {
+            if ( ! validRow(row) )
+                continue;
+            for (int col = x; col < x + w; ++col)
+            {
+                if ( ! validPosition(col, row) )
+                    continue;
+                TM_CharData* cd = &charAt(col, row);
+                cd.glyph = ch;
+                cd.style = current.style;
+                cd.color = current.colorByte;
+                _dirtyValidation = true;
+            }
+        }
+    }
+
+    /**
+        Draw a box with a particular box style.
+    
+        This doesn't use, nor change, cursor position.
+    */
+    void box(int x, int y, int w, int h, TM_BoxStyle bs) pure
+    {
+        if (w < 2 || h < 2) 
+            return;
+        drawChar(x, y, bs[0]);
+        for (int col = x + 1; col + 1 < x+w; ++col)
+            drawChar(col, y, bs[1]);
+        drawChar(x+w-1, y, bs[2]);
+        for (int row = y + 1; row + 1 < y+h; ++row)
+        {
+            drawChar(x, row, bs[3]);
+            drawChar(x+w-1, row, bs[4]);
+        }
+        drawChar(x, y+h-1, bs[5]);
+        for (int col = x + 1; col + 1 < x+w; ++col)
+            drawChar(col, y+h-1, bs[6]);
+        drawChar(x+w-1, y+h-1, bs[7]);
+    }
+
+    /**
 
     // ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
     // ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
@@ -890,7 +989,6 @@ nothrow:
 
     // </dirty rectangles>
 
-
     ~this() @trusted
     {
         free(_text.ptr); // free all text buffers
@@ -983,6 +1081,12 @@ private:
 
         // for the CCL interpreter
         int inputPos   = 0; // pos of opening tag in input chars
+
+        // Color byte if both fg and bg are applied.
+        ubyte colorByte() pure const nothrow @nogc
+        {
+            return (fg & 0x0f) | ((bg & 0x0f) << 4);
+        }
     }
 
     enum STATE_STACK_DEPTH = 32;
@@ -997,6 +1101,26 @@ private:
     bool validPosition(int col, int row) pure const
     {
         return (cast(uint)col < _columns) && (cast(uint)row < _rows);
+    }
+    bool validColumn(int col) pure const
+    {
+        return (cast(uint)col < _columns);
+    }
+    bool validRow(int row) pure const
+    {
+        return (cast(uint)row < _rows);
+    }
+
+    // safe drawing, help function
+    void drawChar(int col, int row, dchar ch) pure
+    {
+        if ( ! validPosition(col, row) )
+            return;
+        TM_CharData* cd = &charAt(col, row);
+        cd.glyph = ch;
+        cd.style = current.style;
+        cd.color = current.colorByte;
+        _dirtyValidation = true;
     }
 
     // Output buffer description

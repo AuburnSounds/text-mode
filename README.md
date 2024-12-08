@@ -38,7 +38,7 @@ void setup(MyImage image)
     /* ...printing functions goes here... */
  
     // display changes since the last .render, in output buffer
-     console.render();
+    console.render();
 }
 ```
 
@@ -100,12 +100,12 @@ with (console)
 > _**Key-concept**: if text must be printed in a line below the screen, the whole screen scrolls._
 
 
-### 3. CCL Language
+### 4. CCL Language
 
- `print` and `println` accepts markup language.
+ `cprint` and `cprintln` accepts markup language.
 
 
-         
+
 
  Accepted:
  - Foreground color: `<black>`, 
@@ -123,12 +123,13 @@ console.size(40, 22);
 with (console)
 {
     cls();
-    println("<b>This is bold</b>");
+    cprintln("<b>This is bold</b>");
+    cprint("Special character: &lt; &gt; &amp;")
 }
 ```
  
 
-### 4. Changing console options
+### 5. Changing console options
 
 ```d
 TM_Console console;
@@ -202,7 +203,7 @@ struct TM_Options
 ```
 
 
-### 5. Direct character data access
+### 6. Direct character data access
 
 If you'd like to not go through `print`/`println` then you can access character data with `charAt`.
 
