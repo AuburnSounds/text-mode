@@ -129,7 +129,7 @@ rect_t rectIntersection(const(rect_t) a, const(rect_t) b) {
     assert(rectIsSorted(r));
     return r;
 }
-   
+
 
 /**
     Returns: `true` if two rectangles intersect.
