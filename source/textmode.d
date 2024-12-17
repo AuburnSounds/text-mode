@@ -2011,6 +2011,7 @@ static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
         TM_UnicodeRange(0x00A0, 0x0100, LATIN1_SUPP),
         TM_UnicodeRange(0x0390, 0x03D0, GREEK_AND_COPTIC),
         TM_UnicodeRange(0x2020, 0x2030, GENERAL_PUNCTUATION),
+        TM_UnicodeRange(0x2122, 0x2123, LETTERLIKE_SYMBOLS),
         TM_UnicodeRange(0x2190, 0x219A, ARROWS),
         TM_UnicodeRange(0x2200, 0x2270, MATH_OPERATORS),
         TM_UnicodeRange(0x2320, 0x2322, MISC_TECHNICAL),
@@ -2328,6 +2329,11 @@ static immutable ubyte[16 * 8] GENERAL_PUNCTUATION =
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+202D
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+202E
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // U+202F
+];
+
+static immutable ubyte[1 * 8] LETTERLIKE_SYMBOLS =
+[
+    0x00, 0xee, 0x4e, 0x4a, 0x00, 0x00, 0x00, 0x00, // U+2122 ™
 ];
 
 static immutable ubyte[16 * 8] ARROWS =
@@ -3534,18 +3540,109 @@ pure:
                     case 2: break; // not sure what to do
                     case 3: style(curStyle | TM_blink); break;
                     case 4: style(curStyle | TM_underline); break;
+                    case 21: style(curStyle & ~TM_bold); break;
+                    case 24: style(curStyle & ~TM_underline); break;
                     case 30: .. case 37:   fg(n - 30); break;
                     case 40: .. case 47:   bg(n - 40); break;
                     case 90: .. case 97:   fg(n - 82); break;
                     case 100: .. case 107: bg(n - 92); break;
-                    case 38: break; // TODO
-                    case 48: break; // TODO
+
+                    case 38: // eg: \e[48;5;236;38;5;247m
+                    case 48:
+                    {
+                        if (i + 1 >= args.length)
+                            return;
+                        int subcmd = args[++i];
+                        int icol;
+                        if (subcmd == 5)
+                        {
+                            if (i + 1 >= args.length)
+                                return;
+                            icol = extendedPaletteMatch(args[++i]);
+                        }
+                        else if (subcmd == 2)
+                        {
+                            if (i + 3 >= args.length)
+                                return;
+                            int r = cast(ubyte)args[++i];
+                            int g = cast(ubyte)args[++i];
+                            int b = cast(ubyte)args[++i];
+                            icol = findBestMatch(r, g, b);
+                        }
+                        else
+                            return;
+
+                        if (n == 38)
+                            fg(icol);
+                        else
+                            bg(icol);
+                        break;
+                    }
+
                     case 39: fg(TM_grey); break;
                     case 49: bg(TM_black); break;
                     default: break; // ignore
                 }
             }
         }
+    }
+
+    int extendedPaletteMatch(int c)
+    {
+        if (c < 0 || c > 255)
+            return 0; // black, invalid color
+
+        if (c < 16)
+            return c; // base 16 colors
+
+        // Else match into the palette of 16 colors, since we don't 
+        // want to display more than 16 colors anyway.
+
+        int r, g, b;
+        if (c >= 232)
+        {
+            c -= 232; // 0 to 23
+            r = g = b = ((255 * c) + 12) / 23;
+        }
+        else
+        {
+            // 16 to 231
+            // 6 × 6 × 6 cube (216 colors)
+            // c = 36 × r + 6 × g + b (0 <= r, g, b <= 5)
+            c -= 16;
+            b = c % 6;
+            c /= 6;
+            g = c % 6;
+            c /= 6;
+            r = c;
+            r = ((255 * r) + 3) / 5;
+            g = ((255 * g) + 3) / 5;
+            b = ((255 * b) + 3) / 5;
+        }
+        return findBestMatch(r, g, b);
+    }
+
+    // find best match for color r,g,b in 16 color palette
+    int findBestMatch(int r, int g, int b)
+    {
+        // Find best match in palette (sum of abs diff).
+        int best = -1;
+        int bestScore = int.max;
+        for (int n = 0; n < 15; ++n)
+        {
+            rgba_t e = console._palette[n];
+            if (e.a == 0)
+                continue; // can't match transparent color
+            int err = abs_int32(e.r - r) 
+                    + abs_int32(e.g - g)  
+                    + abs_int32(e.b - b);
+            if (err < bestScore)
+            {
+                best = n;
+                bestScore = err;
+            }
+        }
+        return best >= 0 ? best : 0;
     }
 
 private:
@@ -3644,4 +3741,9 @@ double erf(double x) pure
 double def_int_gaussian(double x, double mu, double sigma) pure
 {
     return 0.5 * erf((x - mu) / (1.41421356237 * sigma));
+}
+
+int abs_int32(int x) pure
+{
+    return x >= 0 ? x : -x;
 }
