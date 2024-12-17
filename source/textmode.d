@@ -685,19 +685,19 @@ nothrow:
         Do nothing for each dimension separately, if position is out
         of bounds.
     */
-    void locate(int x = -1, int y = -1)
+    void locate(int x = -1, int y = -1) pure
     {
         column(x);
         row(y);
     }
     ///ditto
-    void column(int x)
+    void column(int x) pure
     {
         if ((x >= 0) && (x < _columns))
             current.ccol = x;
     }
     ///ditto
-    void row(int y)
+    void row(int y) pure
     {
         if ((y >= 0) && (y < _rows))
             current.crow = y;
@@ -742,6 +742,35 @@ nothrow:
     {
         cprint(s);
         newline();
+    }
+
+    /**
+        Print while interpreting ANSI codes.
+        This is designed to print CP437 encoded .ans files directly,
+        such as displayed on website: https://16colo.rs/ 
+
+        That .ans image is displayed in current cursor position!
+    */
+    void printANS_CP437(const(char)[] s)
+    {
+        ANSInterpreter interp;
+        interp.initialize(&this, current.ccol, current.crow);
+        interp.input(s, true);
+        interp.interpret(s);
+    }
+
+    /**
+        Print while interpreting ANSI codes.
+        This is designed to print UTF-8 encoded .ans files directly.
+
+        That .ans image is displayed in current cursor position!
+    */
+    void printANS_UTF8(const(char)[] s)
+    {
+        ANSInterpreter interp;
+        interp.initialize(&this, current.ccol, current.crow);
+        interp.input(s, false);
+        interp.interpret(s);
     }
 
     /**
@@ -2781,7 +2810,7 @@ pure:
         inputPos = 0;
 
         bool finished = false;
-        bool termTextWasOutput = false;
+
         while(!finished)
         {
             final switch (_parserState)
@@ -3174,6 +3203,285 @@ private:
     }
 }
 
+// .ans interpreter implementation
+// Supported: 
+//    ESC[#C
+//
+struct ANSInterpreter
+{
+public:
+nothrow:
+@nogc:
+pure:
+
+    void initialize(TM_Console* console, int baseX, int baseY)
+    {
+        this.console = console;
+        this.baseX   = baseX;
+        this.baseY   = baseY;
+    }
+
+    void input(const(char)[] s, bool isCP437)
+    {
+        this.s        = s;
+        this.inputPos = 0;
+        this.line     = 0;
+        this.state    = State.initial;
+        this.isCP437  = isCP437;
+    }
+
+    // Output BOTH original char in the input
+    // and the glyph. This is because .ans uses
+    // 0x1b escape codes, however this is still
+    // a glyph in CP437 and no escaping is done.
+    //
+    // Returns:
+    //     Number of character popped.
+    //     ch = original byte in the stream
+    //          If and only if that byte was 0..128, else 0.
+    //  glyph = Unicode BMP glyph.
+    int peek(out char ch, out dchar glyph)
+    {
+        if (inputPos >= s.length)
+        {
+            ch = '\0';
+            glyph = '\0'; // end marker
+            return 0;
+        }
+        else
+        {
+            ch = s[inputPos];
+
+            if (isCP437)
+            {
+                glyph = cast(dchar) CP437_TO_UNICODE[ch];
+                if (ch > 127) ch = '\0';
+                return 1;
+            }
+            else
+            {
+                if (ch >= 128)
+                {
+                    assert(false); // TODO UTF-8 decode
+                }
+                glyph = ch;
+                return 1;
+            }
+        }
+    }
+    
+    void next()
+    {
+        char ch;
+        dchar glyph;
+        int ofs = peek(ch, glyph);
+        inputPos += ofs;
+    }
+
+    bool isNumber()
+    {
+        char ch;
+        dchar glyph;
+        peek(ch, glyph);
+        return ch >= '0' && ch <= '9';
+    }
+
+    // never fails since called on '0' .. '9' input
+    int parseNumber()
+    {
+        int r = 0;
+        char ch;
+        dchar glyph;
+        while(true)
+        {
+            peek(ch, glyph);
+            if (ch >= '0' && ch <= '9')
+            {
+                next;
+                r = r * 10 + (ch - '0');
+            }
+            else
+                break;
+        }
+        return r;
+    }
+
+    // it is understood that this string may be CP437 or UTF-8.
+    // Much like Markdown, a VT-100 emulation cannot fail.
+    // TODO: ESC[39m
+    // TODO: ESC]8
+    void interpret(const(char)[] s)
+    {
+        state = State.initial;
+        int line = 0;
+        while(true)
+        {
+            char ch;
+            dchar glyph;
+            int npos = peek(ch, glyph);
+            if (glyph == '\0')
+                break; // end of input
+
+            if (ch == '\n') // CR
+            {
+                next;
+                line++;
+                console.locate(baseX, baseY+line);
+            }
+            else if (ch == '\r')
+            {
+                next;
+                console.column(baseX);
+            }
+            else if (ch == '\x1B')
+            {
+                dchar escGlyph = glyph;
+                next;
+                peek(ch, glyph);
+                if (ch == '[')
+                {
+                    int nArg = 0;
+                    enum MAX_ARGS = 8;
+                    int[MAX_ARGS] args;
+                    while(true)
+                    {
+                        if (isNumber())
+                        {
+                            int n = parseNumber();
+                            if (nArg + 1 < MAX_ARGS)
+                                args[nArg++] = n;
+                            peek(ch, glyph);
+
+                            // ; or exit
+                            if (ch == ';')
+                                next;
+                            else
+                                break;
+                        }
+                        else
+                            break;
+                    }
+
+                    peek(ch, glyph);
+                    char command = ch;
+                    next;
+                    if (command == 'm')
+                    {
+                        displayAttr(args);
+                    }
+                    else
+                    {
+                        // ignore whole sequence
+                    }
+                }
+                else if (ch == ']')
+                {
+                    // escape sequence failed
+                }
+                else
+                {
+                    // unknown escape sequence
+                }
+            }
+            else
+            {
+                next;
+                console.print(glyph);
+            }
+        }
+    }
+
+    // Our small state machine 
+    enum State
+    {
+        initial, // seen nothing
+        escape,  // seen \e
+        csi,     // seen \e[
+    }
+
+    // Reference: https://en.wikipedia.org/wiki/ANSI_escape_code
+    void displayAttr(int[] args)
+    {
+        if (args.length == 0)
+        {
+            console.style(TM_none);
+            return;
+        }
+
+        with (console)
+        {
+
+            for (size_t i = 0; i < args.length; ++i)
+            {
+                int n = args[i];
+                TM_Style curStyle = current.style;
+                switch(n)
+                {
+                    // All attributes become turned off
+                    case 0: style(TM_none); break;
+                    case 1: style(curStyle | TM_bold); break;
+                    case 2: break; // not sure what to do
+                    case 3: style(curStyle | TM_blink); break;
+                    case 4: style(curStyle | TM_underline); break;
+                    case 30: .. case 37:   fg(n - 30); break;
+                    case 40: .. case 47:   bg(n - 40); break;
+                    case 90: .. case 97:   fg(n - 82); break;
+                    case 100: .. case 107: bg(n - 92); break;
+                    case 38: break; // TODO
+                    case 48: break; // TODO
+                    case 39: fg(TM_grey); break;
+                    case 49: bg(TM_black); break;
+                    default: break; // ignore
+                }
+            }
+        }
+    }
+
+private:
+    const(char)[] s;
+    int inputPos;
+    int line;
+    bool isCP437;
+    State state;
+    int baseX, baseY;
+    TM_Console* console;
+}
+
+static immutable ushort[256] CP437_TO_UNICODE =
+[
+    0x0000, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022,
+    0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
+    0x25BA, 0x25C4, 0x2195, 0x203C, 0x00B6, 0x00A7, 0x25AC, 0x21A8,
+    0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC,
+    0x0020, 0x0021, 0x0022, 0x0023, 0x0024, 0x0025, 0x0026, 0x0027,
+    0x0028, 0x0029, 0x002A, 0x002B, 0x002C, 0x002D, 0x002E, 0x002F,
+    0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037,
+    0x0038, 0x0039, 0x003A, 0x003B, 0x003C, 0x003D, 0x003E, 0x003F,
+    0x0040, 0x0041, 0x0042, 0x0043, 0x0044, 0x0045, 0x0046, 0x0047,
+    0x0048, 0x0049, 0x004A, 0x004B, 0x004C, 0x004D, 0x004E, 0x004F,
+    0x0050, 0x0051, 0x0052, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057,
+    0x0058, 0x0059, 0x005A, 0x005B, 0x005C, 0x005D, 0x005E, 0x005F,
+    0x0060, 0x0061, 0x0062, 0x0063, 0x0064, 0x0065, 0x0066, 0x0067,
+    0x0068, 0x0069, 0x006A, 0x006B, 0x006C, 0x006D, 0x006E, 0x006F,
+    0x0070, 0x0071, 0x0072, 0x0073, 0x0074, 0x0075, 0x0076, 0x0077,
+    0x0078, 0x0079, 0x007A, 0x007B, 0x007C, 0x007D, 0x007E, 0x2302,
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
+    0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
+    0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA,
+    0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
+    0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
+    0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B,
+    0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4,
+    0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
+    0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0,
+];
 
 // Make 1D separable gaussian kernel
 void makeGaussianKernel(int len,
