@@ -159,6 +159,7 @@ enum TM_Palette
     campbell,     ///
     oneHalfLight, ///
     tango,        ///
+    vga,          /// 
 }
 
 /// Selected vintage font.
@@ -1919,7 +1920,7 @@ rgba16_t linearU16Premul(rgba_t c)
 
 static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
 [
-    // Vintaage
+    // Vintage
     [ 0x00000000, 0x800000ff, 0x008000ff, 0x808000ff,
       0x000080ff, 0x800080ff, 0x008080ff, 0xc0c0c0ff,
       0x808080ff, 0xff0000ff, 0x00ff00ff, 0xffff00ff,
@@ -1942,6 +1943,12 @@ static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
       0x3465a4ff, 0x75507bff, 0x06989aff, 0xd3d7cfff,
       0x555753ff, 0xef2929ff, 0x8ae234ff, 0xfce94fff,
       0x729fcfff, 0xad7fa8ff, 0x34e2e2ff, 0xeeeeecff ],
+
+    // VGA
+    [ 0x00000000, 0xAA0000ff, 0x00AA00ff, 0xAA5500ff,
+      0x0000AAff, 0xAA00AAff, 0x00AAAAff, 0xAAAAAAff,
+      0x555555ff, 0xff5555ff, 0x55ff55ff, 0xffff55ff,
+      0x5555ffff, 0xff55ffff, 0x55ffffff, 0xffffffff ],
 ];
 
 alias TM_RangeFlags = int;
@@ -3244,6 +3251,7 @@ pure:
     {
         if (inputPos >= s.length)
         {
+        decode_error:
             ch = '\0';
             glyph = '\0'; // end marker
             return 0;
@@ -3260,12 +3268,57 @@ pure:
             }
             else
             {
-                if (ch >= 128)
+                // UTF-8 decoding.
+                // Note: this looks verbose compared to how it's 
+                // supposed to be decoded
+                if (ch <= 127)
                 {
-                    assert(false); // TODO UTF-8 decode
+                    glyph = ch;
+                    return 1;
                 }
-                glyph = ch;
-                return 1;
+                else if (ch <= 223)
+                {
+                    // two-byte codepoint
+                    if (inputPos + 1 >= s.length)
+                        goto decode_error;
+                    char ch2 = s[inputPos+1];
+                    if (ch2 > 191)
+                        goto decode_error;
+                    glyph = ((ch & 0x1f) << 6) | (ch2 & 0x3f);
+                    return 2;
+                }
+                else if (ch <= 239)
+                {
+                    // three-byte codepoint
+                    if (inputPos + 2 >= s.length)
+                        goto decode_error;
+                     char ch2 = s[inputPos+1];
+                     char ch3 = s[inputPos+2];
+                     if (ch2 > 191 || ch3 > 191)
+                         goto decode_error;
+                     glyph = ((ch  & 0x0f) << 12) 
+                           | ((ch2 & 0x3f) << 6)
+                           |  (ch3 & 0x3f);
+                     return 3;
+                }
+                else if (ch >= 247)
+                {
+                    // four-byte codepoint
+                    if (inputPos + 3 >= s.length)
+                        goto decode_error;
+                    char ch2 = s[inputPos+1];
+                    char ch3 = s[inputPos+2];
+                    char ch4 = s[inputPos+3];
+                    if (ch2 > 191 || ch3 > 191 || ch4 > 191)
+                        goto decode_error;
+                    glyph = ((ch2  & 0x07) << 18) 
+                          | ((ch2  & 0x0f) << 12) 
+                          | ((ch3 & 0x3f) << 6)
+                          | (ch4 & 0x3f);
+                    return 4;
+                }
+                else
+                    goto decode_error;
             }
         }
     }
@@ -3340,6 +3393,7 @@ pure:
                 peek(ch, glyph);
                 if (ch == '[')
                 {
+                    next;
                     int nArg = 0;
                     enum MAX_ARGS = 8;
                     int[MAX_ARGS] args;
@@ -3369,6 +3423,11 @@ pure:
                     {
                         displayAttr(args);
                     }
+                    else if (command == 'C' && nArg >= 1)
+                    {
+                        int curcol = console.current.ccol;
+                        console.column(curcol + args[0]);
+                    }
                     else
                     {
                         // ignore whole sequence
@@ -3376,10 +3435,12 @@ pure:
                 }
                 else if (ch == ']')
                 {
+                    next;
                     // escape sequence failed
                 }
                 else
                 {
+                    next;
                     // unknown escape sequence
                 }
             }

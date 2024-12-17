@@ -18,8 +18,9 @@ class TermExample : TurtleGame
 
     override void load()
     {
+        console.palette(TM_Palette.vga);
         setBackgroundColor(color("black"));
-        console.size(80, 45);
+        console.size(80, 50);
     }
 
     override void mouseMoved(float x, float y, float dx, float dy)
@@ -43,7 +44,7 @@ class TermExample : TurtleGame
         with (console)
         {
             cls();
-            printANS_CP437(import("anst-fenrir.ans"));
+            printANS_UTF8(import("16-bit installer (UTF-8).txt"));
             render();
         }
     }

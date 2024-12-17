@@ -1,7 +1,7 @@
 {
   "name": "ans-display",
   "targetType": "executable",
-  "stringImportPaths": ["resources"],
+  "stringImportPaths": ["ANSI-art", "resources"],
   "dependencies": {
     "turtle": "~>0.0",
     "text-mode" : { "path" : "../.." }
