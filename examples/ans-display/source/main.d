@@ -44,7 +44,7 @@ class TermExample : TurtleGame
         with (console)
         {
             cls();
-            printANS_UTF8(import("16-bit installer (UTF-8).txt"));
+            printANS_UTF8(import("WSL logo (UTF-8).txt"));
             render();
         }
     }
