@@ -747,30 +747,37 @@ nothrow:
 
     /**
         Print while interpreting ANSI codes.
+        This is designed to print UTF-8 encoded .ans files directly,
+        who support more characters.
+
+        That .ans image is displayed in current cursor position as a
+        kind of bitmap, so it's blit without line feeds or scrolling.
+
+        Doesn't change cursor position.
+    */
+    void printANS(const(char)[] s)
+    {
+        ANSInterpreter interp;
+        interp.initialize(&this, current.ccol, current.crow);
+        interp.input(s, false);
+        interp.interpret(s);
+    }
+
+    /**
+        Print while interpreting CP437-encoded ANSI codes.
         This is designed to print CP437 encoded .ans files directly,
         such as displayed on website: https://16colo.rs/ 
 
-        That .ans image is displayed in current cursor position!
+        That .ans image is displayed in current cursor position as a
+        kind of bitmap, so it's blit without line feeds or scrolling.
+
+        Doesn't change cursor position.
     */
     void printANS_CP437(const(char)[] s)
     {
         ANSInterpreter interp;
         interp.initialize(&this, current.ccol, current.crow);
         interp.input(s, true);
-        interp.interpret(s);
-    }
-
-    /**
-        Print while interpreting ANSI codes.
-        This is designed to print UTF-8 encoded .ans files directly.
-
-        That .ans image is displayed in current cursor position!
-    */
-    void printANS_UTF8(const(char)[] s)
-    {
-        ANSInterpreter interp;
-        interp.initialize(&this, current.ccol, current.crow);
-        interp.input(s, false);
         interp.interpret(s);
     }
 
@@ -3284,6 +3291,12 @@ pure:
         this.baseY   = baseY;
     }
 
+    ~this()
+    {
+        console.current.ccol = baseX;
+        console.current.crow = baseY;
+    }
+
     void input(const(char)[] s, bool isCP437)
     {
         this.s        = s;
@@ -3417,8 +3430,6 @@ pure:
 
     // it is understood that this string may be CP437 or UTF-8.
     // Much like Markdown, a VT-100 emulation cannot fail.
-    // TODO: ESC[39m
-    // TODO: ESC]8
     void interpret(const(char)[] s)
     {
         state = State.initial;
@@ -3441,6 +3452,11 @@ pure:
             {
                 next;
                 console.column(baseX);
+            }
+            else if (ch == '\x1A')
+            {
+                // This is a .ans terminator, beyond is the "sub"
+                break;
             }
             else if (ch == '\x1B')
             {
@@ -3492,6 +3508,13 @@ pure:
                 else if (ch == ']')
                 {
                     next;
+                    while(true)
+                    {
+                        peek(ch, glyph);
+                        next;
+                        if (ch == 7)
+                            break;
+                    }
                     // escape sequence failed
                 }
                 else
