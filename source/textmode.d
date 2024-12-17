@@ -3538,10 +3538,14 @@ pure:
                     case 0: style(TM_none); break;
                     case 1: style(curStyle | TM_bold); break;
                     case 2: break; // not sure what to do
-                    case 3: style(curStyle | TM_blink); break;
+                    case 3: 
+                    case 5: 
+                    case 6:
+                        style(curStyle | TM_blink); break;
                     case 4: style(curStyle | TM_underline); break;
                     case 21: style(curStyle & ~TM_bold); break;
                     case 24: style(curStyle & ~TM_underline); break;
+                    case 25: style(curStyle & ~TM_blink); break;
                     case 30: .. case 37:   fg(n - 30); break;
                     case 40: .. case 47:   bg(n - 40); break;
                     case 90: .. case 97:   fg(n - 82); break;
