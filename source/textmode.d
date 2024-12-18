@@ -1793,15 +1793,7 @@ private:
             rgba_t*           finalScan = &_final[_postWidth * y];
             for (int x = updateRect.left; x < updateRect.right; ++x)
             {
-                static ubyte clamp_0_255(float t) pure
-                {
-                    int u = cast(int)t;
-                    if (u > 255) u = 255;
-                    if (u < 0) u = 0;
-                    return cast(ubyte)u;
-                }
-
-                static TM_max32f(float a, float b) pure
+                static float TM_max32f(float a, float b) pure
                 {
                     return a < b ? a : b;
                 }
@@ -1809,13 +1801,14 @@ private:
                 __m128 blur = _mm_loadu_ps(cast(float*)&blurScan[x]);
 
                 __m128i post = _mm_loadu_si32(&postScan[x]);
-                __m128i zero = _mm_setzero_si128();
+                __m128i zero;
+                zero = 0;
                 post = _mm_unpacklo_epi8(post, zero);
                 post = _mm_unpacklo_epi16(post, zero);
                 __m128 postF = _mm_cvtepi32_ps(post);
 
-
-                __m128 blurAmt = _mm_set1_ps(_options.blurAmount);
+                __m128 blurAmt;
+                blurAmt = _options.blurAmount;
 
                 // Add blur
                 __m128 RGB = postF + blur * blurAmt;

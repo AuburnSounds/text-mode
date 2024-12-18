@@ -50,9 +50,13 @@ class TermExample : TurtleGame
     int imgIndex = 0;
     enum string[] ANSI_IMAGES =
     [
+        "resources/TestPattern ANSI.ans",
+        "resources/TestPattern 24-bit.ans",
         "resources/Pac-Man (UTF-8).txt",
         "resources/IBM PCjr startup screen (80x25 UTF-8 double-width text).txt",
         "resources/MiniColorsWheel.ans",
+        "resources/Apple Macintosh.ans",
+        "resources/Arkanoid.ans"
     ];
 
     const(char)[] ansBytes;
