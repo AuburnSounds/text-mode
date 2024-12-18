@@ -299,7 +299,7 @@ nothrow:
         Set/get size of text buffer.
         Warning: this clears the screen like calling `cls`.
 
-        See_also: outbuf
+        See_also: `outbuf`
      */
     void size(int columns, int rows)
     {
@@ -585,6 +585,10 @@ nothrow:
         }
     }
     ///ditto
+    void print() pure
+    {
+    }
+    ///ditto
     void print(const(wchar)[] s) pure
     {
         foreach(dchar ch; s.byDchar())
@@ -626,6 +630,11 @@ nothrow:
     void println(const(char)[] s) pure
     {
         print(s);
+        newline();
+    }
+    ///ditto
+    void println() pure
+    {
         newline();
     }
     ///ditto
@@ -2010,6 +2019,10 @@ const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
 
 static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
 [
+    // TODO:
+    // U+FF11 U+FF12 U+FF18 U+3000 U+FF2B U+FF22
+
+
     TM_FontDesc([8, 8],
     [
         TM_UnicodeRange(0x0000, 0x0020, EMPTY, TM_singleGlyph),
@@ -2027,6 +2040,10 @@ static immutable TM_FontDesc[TM_Font.max + 1] BUILTIN_FONTS =
         TM_UnicodeRange(0x25A0, 0x2600, GEOMETRIC_SHAPES),
         TM_UnicodeRange(0x2630, 0x2640, MISC_SYMBOLS_2630),
         TM_UnicodeRange(0x2660, 0x2670, MISC_SYMBOLS_2660),
+        TM_UnicodeRange(0x3000, 0x3001, BASIC_LATIN[0..8]),
+        // Note: U+FF00 to U+FF5E is fullwidth of U+0020 to U+007E
+        // => reuse the table since we do not implement "fullwidth".
+        TM_UnicodeRange(0xFF00, 0xFF5F, BASIC_LATIN[0..0x5F*8]),
     ])
 ];
 
