@@ -3521,7 +3521,7 @@ pure:
                     }
                     break;
                 }
-                case ']':
+                else if (ch ==  ']')
                 {
                     next;
                     while(true)
