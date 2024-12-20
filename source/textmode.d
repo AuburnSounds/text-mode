@@ -3444,6 +3444,7 @@ pure:
     {
         state = State.initial;
         int line = 0;
+        LW:
         while(true)
         {
             char ch;
@@ -3452,23 +3453,27 @@ pure:
             if (glyph == '\0')
                 break; // end of input
 
-            if (ch == '\n') // CR
+            switch(ch)
+            {
+            case '\n': // CR
             {
                 next;
                 line++;
                 console.locate(baseX, baseY+line);
+                break;
             }
-            else if (ch == '\r')
+            case '\r':
             {
                 next;
                 console.column(baseX);
-            }
-            else if (ch == '\x1A')
-            {
-                // This is a .ans terminator, beyond is the "sub"
                 break;
             }
-            else if (ch == '\x1B')
+            case '\x1A':
+            {
+                // This is a .ans terminator, beyond is the "sub"
+                break LW;
+            }
+            case '\x1B':
             {
                 dchar escGlyph = glyph;
                 next;
@@ -3514,8 +3519,9 @@ pure:
                     {
                         // ignore whole sequence
                     }
+                    break;
                 }
-                else if (ch == ']')
+                else if (ch ==  ']')
                 {
                     next;
                     while(true)
@@ -3532,11 +3538,14 @@ pure:
                     next;
                     // unknown escape sequence
                 }
+                break;
             }
-            else
+            default:
             {
                 next;
                 console.print(glyph);
+                break;
+            }
             }
         }
     }
