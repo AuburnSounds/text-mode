@@ -3545,6 +3545,7 @@ pure:
                 console.print(glyph);
                 break;
             }
+            }
         }
     }
 
