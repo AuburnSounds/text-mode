@@ -3538,6 +3538,7 @@ pure:
                     next;
                     // unknown escape sequence
                 }
+                break;
             }
             default:
             {
