@@ -510,6 +510,36 @@ nothrow:
         }
     }
 
+    /**
+        find best match for color `r`, `g`, `b` in palette.
+
+        Returns: A palette index to use with `fg` or `bg`.
+    */
+    int findColorMatch(int r, int g, int b) pure
+    {
+        // Find best match in palette (sum of abs diff).
+        int best = -1;
+        int bestScore = int.max;
+        for (int n = 0; n < 16; ++n)
+        {
+            rgba_t e = _palette[n];
+            if (e.a == 0)
+                continue; // can't match transparent color
+            int diffR = abs_int32(e.r - r);
+            int diffG = abs_int32(e.g - g);
+            int diffB = abs_int32(e.b - b);
+            int err = 3 * diffR * diffR
+                    + 4 * diffG * diffG
+                    + 2 * diffB * diffB;
+            if (err < bestScore)
+            {
+                best = n;
+                bestScore = err;
+            }
+        }
+        return best >= 0 ? best : 0;
+    }
+
 
     /**
         Set other options.
@@ -788,6 +818,27 @@ nothrow:
         interp.initialize(&this, current.ccol, current.crow);
         interp.input(s, true);
         interp.interpret(s);
+    }
+
+    /**
+        Print while interpreting .xp binary file from REXPaint.
+        That .xp image is blit in current cursor position as a 
+        bitmap. Doesn't change cursor position.
+
+        NOT WORKING YET!!!
+
+        Params:
+             xpBytes The .xp file contents.
+             layerMask What layers to draw, -1 means all.
+                       Bit 0 for layer 1
+                       etc...
+                       Bit 8 for layer 9.
+    */
+    void printXP(const(void)[] xpBytes, int layerMask = -1)
+    {
+        XPInterpreter interp;
+        interp.initialize(&this, current.ccol, current.crow);
+        interp.interpret(cast(const(ubyte)[]) xpBytes, layerMask);
     }
 
     /**
@@ -3284,9 +3335,6 @@ private:
 }
 
 // .ans interpreter implementation
-// Supported: 
-//    ESC[#C
-//
 struct ANSInterpreter
 {
 public:
@@ -3312,7 +3360,6 @@ pure:
         this.s        = s;
         this.inputPos = 0;
         this.line     = 0;
-        this.state    = State.initial;
         this.isCP437  = isCP437;
     }
 
@@ -3442,7 +3489,6 @@ pure:
     // Much like Markdown, a VT-100 emulation cannot fail.
     void interpret(const(char)[] s)
     {
-        state = State.initial;
         int line = 0;
         LW:
         while(true)
@@ -3481,6 +3527,14 @@ pure:
                 if (ch == '[')
                 {
                     next;
+                    bool equal = false;
+                    peek(ch, glyph);
+                    if (ch == '=')
+                    {
+                        equal = true;
+                        next;
+                    }
+
                     int nArg = 0;
                     enum MAX_ARGS = 8;
                     int[MAX_ARGS] args;
@@ -3550,14 +3604,6 @@ pure:
         }
     }
 
-    // Our small state machine 
-    enum State
-    {
-        initial, // seen nothing
-        escape,  // seen \e
-        csi,     // seen \e[
-    }
-
     // Reference: https://en.wikipedia.org/wiki/ANSI_escape_code
     void displayAttr(int[] args)
     {
@@ -3613,7 +3659,7 @@ pure:
                             int r = cast(ubyte)args[++i];
                             int g = cast(ubyte)args[++i];
                             int b = cast(ubyte)args[++i];
-                            icol = findBestMatch(r, g, b);
+                            icol = findColorMatch(r, g, b);
                         }
                         else
                             return;
@@ -3665,38 +3711,15 @@ pure:
             g = ((255 * g) + 3) / 5;
             b = ((255 * b) + 3) / 5;
         }
-        return findBestMatch(r, g, b);
+        return console.findColorMatch(r, g, b);
     }
 
-    // find best match for color r,g,b in 16 color palette
-    int findBestMatch(int r, int g, int b)
-    {
-        // Find best match in palette (sum of abs diff).
-        int best = -1;
-        int bestScore = int.max;
-        for (int n = 0; n < 15; ++n)
-        {
-            rgba_t e = console._palette[n];
-            if (e.a == 0)
-                continue; // can't match transparent color
-            int err = abs_int32(e.r - r) 
-                    + abs_int32(e.g - g)  
-                    + abs_int32(e.b - b);
-            if (err < bestScore)
-            {
-                best = n;
-                bestScore = err;
-            }
-        }
-        return best >= 0 ? best : 0;
-    }
 
 private:
     const(char)[] s;
     int inputPos;
     int line;
     bool isCP437;
-    State state;
     int baseX, baseY;
     TM_Console* console;
 }
@@ -3736,6 +3759,88 @@ static immutable ushort[256] CP437_TO_UNICODE =
     0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0,
 ];
+
+struct XPInterpreter
+{
+public:
+nothrow:
+@nogc:
+pure:
+
+    void initialize(TM_Console* console, int baseX, int baseY)
+    {
+        this.console = console;
+        this.baseX   = baseX;
+        this.baseY   = baseY;
+    }
+
+    /*
+    #-----xp format version (32)
+    A-----number of layers (32)
+    /----image width (32)
+    |    image height (32)
+    |  /-ASCII code (32) (little-endian!)
+    B| | foreground color red (8)
+    |  | foreground color green (8)
+    |  | foreground color blue (8)
+    | C| background color red (8)
+    |  | background color green (8)
+    \--\-background color blue (8)
+    */
+
+    // Reference: Appendix B: .xp Format Specification
+    //            in REXPaint manual.txt
+    void interpret(const(ubyte)[] input, int layerMask)
+    {
+        _input = input;
+        int ver = read_s32_LE();
+        int numLayers = read_s32_LE();
+        if (numLayers < 1 || numLayers > 9)
+            return;
+        int width = read_s32_LE();
+        int height = read_s32_LE();
+
+        for (int x = 0; x < width; ++x)
+        {
+            for (int y = 0; y < height; ++y)
+            {
+                dchar ch = read_s32_LE();
+                ubyte r = popByte();
+                ubyte g = popByte();
+                ubyte b = popByte();
+                console.locate(baseX + x, baseY + y);
+                console.print(ch);
+            }
+        }
+    }
+
+    int read_s32_LE()
+    {
+        uint r = popByte();
+        r |= (popByte << 8);
+        r |= (popByte << 16);
+        r |= (popByte << 24);
+        return r;
+    }
+
+    ubyte popByte()
+    {
+        if (_input.length == 0)
+            return 0;
+        else
+        {
+            ubyte r = _input[0];
+            _input = _input[1..$];
+            return r;
+        }
+    }
+
+    const(ubyte)[] _input;
+
+private:
+    TM_Console* console;
+    int baseX, baseY;
+}
 
 // Make 1D separable gaussian kernel
 void makeGaussianKernel(int len,
