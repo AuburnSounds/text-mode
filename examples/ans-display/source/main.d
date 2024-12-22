@@ -35,6 +35,7 @@ class TermExample : TurtleGame
         if (keyboard.isDownOnce("escape")) exitGame();
 
         int numImg = cast(int) ANSI_IMAGES.length;
+        int numPal = TM_Palette.max + 1;
         if (keyboard.isDownOnce("left"))
         {
             imgIndex = (imgIndex - 1 + numImg) % numImg;
@@ -45,11 +46,23 @@ class TermExample : TurtleGame
             imgIndex = (imgIndex + 1) % numImg;
             loadANS();
         }
+        if (keyboard.isDownOnce("up"))
+        {
+            palette = cast(TM_Palette)((palette - 1 + numPal) % numPal);
+            loadANS();
+        }
+        if (keyboard.isDownOnce("down"))
+        {
+            palette = cast(TM_Palette)((palette + 1) % numPal);
+            loadANS();
+        }
     }
 
     int imgIndex = 0;
     enum string[] ANSI_IMAGES =
     [
+        "resources/xp-format.xp",
+        "resources/REXPaint-output-ansi-mode.ans",
         "resources/TestPattern ANSI.ans",
         "resources/TestPattern 24-bit.ans",
         "resources/Pac-Man (UTF-8).txt",
@@ -60,7 +73,8 @@ class TermExample : TurtleGame
     ];
 
     const(char)[] ansBytes;
-    bool isCP437;
+    bool isCP437, isXP;
+    TM_Palette palette;
 
     void loadANS()
     {
@@ -69,20 +83,26 @@ class TermExample : TurtleGame
 
         // considered CP437 if no "UTF-8" in path
         isCP437 = path.indexOf("UTF-8") == -1;
+
+        // considered XP format if .xp extension
+        isXP = path.indexOf(".xp") != -1;
     }
 
     override void draw()
     {
         ImageRef!RGBA fb = framebuffer();
 
-        console.palette(TM_Palette.campbell);
+        console.palette(palette);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
 
         with (console)
         {
             cls;
-            println("Press ← and → to cycle .ans images");
+            println("Press ← and → to cycle images");
+            println("Press ↑ and ↓ to cycle palettes");
             println;
+            if (isXP)
+                printXP(ansBytes, -1);
             if (isCP437)
                 printANS_CP437(ansBytes);
             else
@@ -90,7 +110,6 @@ class TermExample : TurtleGame
             render;
         }
     }
-
     TM_Console console;
 }
 

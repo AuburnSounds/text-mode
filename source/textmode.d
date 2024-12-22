@@ -11,6 +11,7 @@ import std.math: abs, exp, sqrt;
 
 import inteli.smmintrin;
 import rectlist;
+import miniz;
 
 nothrow:
 @nogc:
@@ -609,6 +610,7 @@ nothrow:
     */
     void print(const(char)[] s) pure
     {
+        // FUTURE: replace byDChar by own UTF8-decoding
         foreach(dchar ch; s.byDchar())
         {
             print(ch);
@@ -621,6 +623,7 @@ nothrow:
     ///ditto
     void print(const(wchar)[] s) pure
     {
+        // FUTURE: replace byDChar by own UTF-16 decoding
         foreach(dchar ch; s.byDchar())
         {
             print(ch);
@@ -835,10 +838,19 @@ nothrow:
                        Bit 8 for layer 9.
     */
     void printXP(const(void)[] xpBytes, int layerMask = -1)
+        @trusted
     {
+        // On heap since 8kb in size
+        if (!_infl_decompressor)
+            _infl_decompressor = tinfl_decompressor_alloc();
+        tinfl_init(_infl_decompressor);
+
         XPInterpreter interp;
         interp.initialize(&this, current.ccol, current.crow);
-        interp.interpret(cast(const(ubyte)[]) xpBytes, layerMask);
+        interp.interpret(cast(const(ubyte)[]) xpBytes, 
+                         layerMask,
+                         &_scratch,
+                         _infl_decompressor);
     }
 
     /**
@@ -1109,6 +1121,8 @@ nothrow:
         free(_back.ptr); // free all pixel buffers
         free(_post.ptr);
         free(_charDirty.ptr);
+        tinfl_decompressor_free(_infl_decompressor);
+        sb_free(_scratch);
     }
 
 private:
@@ -1184,6 +1198,10 @@ private:
     // Note: those two buffers are fake-linear, premul alpha, u16
     rgba16_t[] _emit  = null; // emissive color
     rgba16_t[] _emitH = null; // same, but horz-blurred, transposed
+
+    // General purpose _scratch buffer. Used for .xp decompression.
+    ubyte* _scratch;
+    tinfl_decompressor* _infl_decompressor;
 
     static struct State
     {
@@ -3765,7 +3783,6 @@ struct XPInterpreter
 public:
 nothrow:
 @nogc:
-pure:
 
     void initialize(TM_Console* console, int baseX, int baseY)
     {
@@ -3790,8 +3807,80 @@ pure:
 
     // Reference: Appendix B: .xp Format Specification
     //            in REXPaint manual.txt
-    void interpret(const(ubyte)[] input, int layerMask)
+    void interpret(const(ubyte)[] input, 
+                   int layerMask,   // which layers to draw
+                   ubyte** scratch, // *scratch is a stretchy buffer 
+                   tinfl_decompressor* infl_decomp)
+        @trusted
     {
+        if (input.length < 18)
+            return; // can't be a .gz file
+
+        // check Gzip header
+        const(ubyte)* bodyPtr;
+        size_t bodyLen;
+        {
+            int ofs = 0;
+            _input = input;
+            if (popByte() != 0x1f)
+                return;
+            if (popByte() != 0x8b)
+                return;
+            if (popByte() != 0x08)
+                return; // not DEFLATE
+            ubyte flags = popByte();
+            assert(flags == 0); // Fortunately REXpaint seems to be 0 here
+            read_s32_LE(); // skip timestamp
+            ubyte xflags = popByte();
+            assert(xflags == 0); // Fortunately REXpaint seems to be 0 here
+            popByte(); // ignore OS
+
+            // other stuff is optional so DEFLATE data begins here
+            bodyPtr = _input.ptr;
+        }
+
+        // check Gzip footer to get size of DEFLATE data
+        {
+            _input = input[$-8..$];
+            read_s32_LE(); // skip CRC
+            bodyLen = cast(uint) read_s32_LE();
+            if (bodyLen > int.max)
+                return;
+        }
+
+        // deflate uncompress stuff
+        {
+            // assume a maximum size for typical ANSI art of 80x50 area.
+            enum size_t MAX_W = 80;
+            enum size_t MAX_H = 50;
+            enum size_t PIX = 12;
+            enum size_t MAX_XP_SIZE = 32 + PIX * MAX_W * MAX_H;
+            // About 48k only!
+
+            sb_set_capacity(*scratch, cast(int)bodyLen);//MAX_XP_SIZE);
+
+            // inflate
+            size_t outlen = bodyLen;
+            int header_size = 10;
+            int footer_size = 8;
+            size_t inlen = input.length - header_size - footer_size;
+            ubyte* output_start = *scratch;
+            ubyte* output_next = *scratch;
+            int flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF
+                      | 0;//TINFL_FLAG_PARSE_ZLIB_HEADER;
+            tinfl_status st = tinfl_decompress(infl_decomp, 
+                                               bodyPtr, 
+                                               &inlen,
+                                               output_start, 
+                                               output_next, 
+                                               &outlen,
+                                               flags);
+            if (st != TINFL_STATUS_DONE)
+                return;
+            // MAYDO: use decompressed length
+            input = (*scratch)[0..outlen];
+        }
+
         _input = input;
         int ver = read_s32_LE();
         int numLayers = read_s32_LE();
@@ -3800,16 +3889,28 @@ pure:
         int width = read_s32_LE();
         int height = read_s32_LE();
 
-        for (int x = 0; x < width; ++x)
+        for (int layer = 0; layer < numLayers; layer++)
         {
-            for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x)
             {
-                dchar ch = read_s32_LE();
-                ubyte r = popByte();
-                ubyte g = popByte();
-                ubyte b = popByte();
-                console.locate(baseX + x, baseY + y);
-                console.print(ch);
+                for (int y = 0; y < height; ++y)
+                {
+                    uint asci = read_s32_LE();
+                    dchar ch = cast(dchar) CP437_TO_UNICODE[asci & 255];
+                    ubyte fg_r = popByte();
+                    ubyte fg_g = popByte();
+                    ubyte fg_b = popByte();
+                    ubyte bg_r = popByte();
+                    ubyte bg_g = popByte();
+                    ubyte bg_b = popByte();
+                    if (bg_r == 255 && bg_g == 0 && bg_b == 255)
+                        continue;
+                    // PERF: LRU cache for matching colors
+                    console.fg(console.findColorMatch(fg_r, fg_g, fg_b));
+                    console.bg(console.findColorMatch(bg_r, bg_g, bg_b));
+                    console.locate(baseX + x, baseY + y);
+                    console.print(ch);
+                }
             }
         }
     }

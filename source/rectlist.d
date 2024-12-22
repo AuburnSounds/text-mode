@@ -528,9 +528,18 @@ public @system
     alias sb_size   = sb_count; /// ditto
 
     /**
-        Capacity of the stretchy buffer.
+        Get capacity of the stretchy buffer.
     */
     int sb_capacity(T)(scope T* a) { return a ? sb_m(a) : 0; }
+
+    /**
+        Set the _capacity_ of the buffer.
+        Never reduce the amount.
+        Does nothing if already >= this capacity.
+    */
+    void sb_set_capacity(T)(scope ref T* a, int m) {
+        sb_maybegrow(a, m);
+    }
 
     /**
         Push back one item in stretchy buffer.
