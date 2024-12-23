@@ -62,7 +62,6 @@ class TermExample : TurtleGame
     enum string[] ANSI_IMAGES =
     [
         "resources/xp-format.xp",
-        "resources/REXPaint-output-ansi-mode.ans",
         "resources/TestPattern ANSI.ans",
         "resources/TestPattern 24-bit.ans",
         "resources/Pac-Man (UTF-8).txt",
@@ -103,7 +102,7 @@ class TermExample : TurtleGame
             println;
             if (isXP)
                 printXP(ansBytes, -1);
-            if (isCP437)
+            else if (isCP437)
                 printANS_CP437(ansBytes);
             else
                 printANS(ansBytes);
