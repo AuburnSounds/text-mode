@@ -1,4 +1,12 @@
-- uses rect clipping to avoid early continue in loops
+# FEATURES
+
+- more characters!
+
+# PERFORMANCE
+
 - blur rectangles could be rectlist
 - stack blur sometimes win a bit
-- more characters!
+- uses rect clipping to avoid early continue in loops
+- faster dchar => glyph lookup
+- faster color-matching with LRU cache
+- decoded `.xp` cache for already-seen input
