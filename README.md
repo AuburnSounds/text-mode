@@ -100,7 +100,30 @@ with (console)
 > _**Key-concept**: if text must be printed in a line below the screen, the whole screen scrolls._
 
 
-### 4. CCL Language
+
+### 4. REXPaint `.xp` file support
+
+[REXPaint](https://kyzrati.itch.io/rexpaint) is a ANSI art editor that introduced the `.xp` file as data format.
+Use `printXP` to display a `.xp` file at the cursor position.
+
+```d
+import std.file;
+auto xpBytes = std.file.read("resources/xp-format.xp");
+console.locate(x, y);
+console.printXP(xpBytes);
+```
+
+**Result**
+![text-mode first example](example-2.png)
+
+See the ans-display
+
+> There is also support for `.ans` file encoded in CP-437 or UTF-8 with the functions: `printANS()` and `printANS_CP437()`.
+
+
+
+
+### 5. CCL Language
 
  `cprint` and `cprintln` accepts markup language.
 
@@ -129,7 +152,7 @@ with (console)
 ```
  
 
-### 5. Changing console options
+### 6. Changing console options
 
 ```d
 TM_Console console;
@@ -203,7 +226,7 @@ struct TM_Options
 ```
 
 
-### 6. Direct character data access
+### 7. Direct character data access
 
 If you'd like to not go through `print`/`println` then you can access character data with `charAt`.
 
@@ -216,13 +239,4 @@ console.charAt(0, 0).style = 0;
 ```
 
 > `.charAt` return a `ref TM_CharData`.
-
-
-## Unicode glyph supported
-
- - [x] 0020 — 007F: Basic Latin
- - [x] 00A0 — 00FF: Latin-1 Supplement
- - [x] 2500 — 257F: Box Drawing
- - [x] 2580 — 259F: Block Elements
- - [x] 25A0 — 25FF: Geometric Shapes
 
