@@ -1618,6 +1618,7 @@ private:
                     rgba_t[]   postScan = _post[start..start+_outW];
                     rgba16_t[] emitScan = _emit[start..start+_outW];
 
+                    // PERF: this loop is super slow
                     for (int xx = 0; xx < _outScaleX; ++xx)
                     {
                         int outX = x * _outScaleX
@@ -1628,7 +1629,7 @@ private:
                         // copy pixel from _back buffer to _post
                         postScan[outX] = fg;
 
-                        // but also write its emissiveness
+                        // but also write its emissiveness²²
                         emitScan[outX] = rgba16_t(0, 0, 0, 0);
                         if (emitLight)
                         {
@@ -1662,6 +1663,7 @@ private:
             rgba_t*         outScan = cast(rgba_t*)(_outPixels
                                                      + _outPitch * y);
 
+            // PERF: switch should be out of that loop
             for (int x = changeRect.left; x < changeRect.right; ++x)
             {
                 // Read one pixel, make potentially several in output
@@ -1674,6 +1676,7 @@ private:
                         break;
 
                     case sourceOver:
+                        // PERF: should be SIMD, top cost in text-mode!
                         outScan[x] = blendColor(fg, outScan[x], fg.a);
                         break;
                 }
@@ -1869,7 +1872,9 @@ private:
 
                 __m128 blur = _mm_loadu_ps(cast(float*)&blurScan[x]);
 
+                // PERF: this load is slow, could load 4 pixels at once instead.
                 __m128i post = _mm_loadu_si32(&postScan[x]);
+
                 __m128i zero;
                 zero = 0;
                 post = _mm_unpacklo_epi8(post, zero);
