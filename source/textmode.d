@@ -1607,6 +1607,13 @@ private:
                 bool emitLight =
                     shiny && ( ( isFg && _options.blurForeground)
                             || (!isFg && _options.blurBackground) );
+                rgba16_t emit = rgba16_t(0, 0, 0, 0);
+                if (emitLight)
+                {
+                    emit = linearU16Premul(fg);
+                }
+
+                int baseX = x * _outScaleX + _outMarginLeft;
 
                 for (int yy = 0; yy < _outScaleY; ++yy)
                 {
@@ -1615,27 +1622,21 @@ private:
                         continue;
 
                     int start = posY * _outW;
-                    rgba_t[]   postScan = _post[start..start+_outW];
-                    rgba16_t[] emitScan = _emit[start..start+_outW];
+                    rgba_t*   postScan = &_post[start];
+                    rgba16_t* emitScan = &_emit[start];
 
-                    // PERF: this loop is super slow
-                    for (int xx = 0; xx < _outScaleX; ++xx)
+                    int minX = baseX;
+                    int maxX = baseX + _outScaleX;
+                    if (maxX > _outW) maxX = _outW;
+                    int count = maxX - minX;
+
+                    for (int xx = minX; xx < maxX; ++xx)
                     {
-                        int outX = x * _outScaleX
-                                 + xx + _outMarginLeft;
-                        if (outX >= _outW)
-                            continue;
-
                         // copy pixel from _back buffer to _post
-                        postScan[outX] = fg;
+                        postScan[xx] = fg;
 
-                        // but also write its emissiveness²²
-                        emitScan[outX] = rgba16_t(0, 0, 0, 0);
-                        if (emitLight)
-                        {
-                            emitScan[outX] = linearU16Premul(fg);
-
-                        }
+                        // but also write its emissiveness
+                        emitScan[xx] = emit;
                     }
                 }
             }
