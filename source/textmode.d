@@ -1663,22 +1663,30 @@ private:
             rgba_t*         outScan = cast(rgba_t*)(_outPixels
                                                      + _outPitch * y);
 
-            // PERF: switch should be out of that loop
-            for (int x = changeRect.left; x < changeRect.right; ++x)
+            final switch (_options.blendMode)
             {
-                // Read one pixel, make potentially several in output
-                // with nearest resampling
-                rgba_t fg = postScan[x];
-                final switch (_options.blendMode) with (TM_BlendMode)
+                case TM_BlendMode.copy:
                 {
-                    case copy:
+                    for (int x = changeRect.left; x < changeRect.right; ++x)
+                    {
+                        // Read one pixel, make potentially several in output
+                        // with nearest resampling
+                        rgba_t fg = postScan[x];
                         outScan[x] = fg;
-                        break;
+                    }
+                    break;
+                }
 
-                    case sourceOver:
-                        // PERF: should be SIMD, top cost in text-mode!
+                case TM_BlendMode.sourceOver:
+                {
+                    for (int x = changeRect.left; x < changeRect.right; ++x)
+                    {
+                        // Read one pixel, make potentially several in output
+                        // with nearest resampling
+                        rgba_t fg = postScan[x];
                         outScan[x] = blendColor(fg, outScan[x], fg.a);
-                        break;
+                    }
+                    break;
                 }
             }
         }
@@ -1979,15 +1987,28 @@ void* realloc_c17(void* p, size_t size) @system
     return realloc(p, size);
 }
 
-rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure
+rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure @trusted
 {
     ubyte invAlpha = cast(ubyte)(~cast(int)alpha);
-    rgba_t c;
-    c.r = cast(ubyte) ( ( fg.r * alpha + bg.r * invAlpha ) / 255 );
-    c.g = cast(ubyte) ( ( fg.g * alpha + bg.g * invAlpha ) / 255 );
-    c.b = cast(ubyte) ( ( fg.b * alpha + bg.b * invAlpha ) / 255 );
-    c.a = cast(ubyte) ( ( fg.a * alpha + bg.a * invAlpha ) / 255 );
-    return c;
+    __m128i alphaMask = _mm_set1_epi32( (invAlpha << 16) | alpha ); // [ alpha invAlpha... (4x)]
+    __m128i mmfg = _mm_cvtsi32_si128( *cast(int*)(&fg) );
+    __m128i mmbg = _mm_cvtsi32_si128( *cast(int*)(&bg) );
+    __m128i zero = _mm_setzero_si128();
+    __m128i colorMask = _mm_unpacklo_epi8(mmfg, mmbg); // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a 0 (8x) ]
+    colorMask = _mm_unpacklo_epi8(colorMask, zero); // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a ]
+    __m128i product = _mm_madd_epi16(colorMask, alphaMask); // [ fg[i]*alpha+bg[i]*invAlpha (4x) ]
+
+    // To divide a ushort by 255, LLVM suggests to
+    // * sign multiply by 32897
+    // * right-shift logically by 23
+    // Thanks https://godbolt.org/
+    product *= _mm_set1_epi32(32897); // PERF: this leads to inefficient code with several pmul
+    product = _mm_srli_epi32(product, 23);
+    __m128i c = _mm_packs_epi32(product, zero);
+    c = _mm_packus_epi16(c, zero);
+    rgba_t result = void;
+    *cast(int*)(&result) = c[0];
+    return result;
 }
 
 rgba16_t linearU16Premul(rgba_t c)
