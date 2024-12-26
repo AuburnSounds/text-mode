@@ -161,6 +161,8 @@ enum TM_Palette
     oneHalfLight, ///
     tango,        ///
     vga,          /// 
+    windows10,    ///
+    vscode        ///
 }
 
 /// Selected vintage font.
@@ -2025,7 +2027,7 @@ rgba16_t linearU16Premul(rgba_t c)
 
 static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
 [
-    // Vintage
+    // Vintage (also: Windows XP console)
     [ 0x00000000, 0x800000ff, 0x008000ff, 0x808000ff,
       0x000080ff, 0x800080ff, 0x008080ff, 0xc0c0c0ff,
       0x808080ff, 0xff0000ff, 0x00ff00ff, 0xffff00ff,
@@ -2054,6 +2056,18 @@ static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
       0x0000AAff, 0xAA00AAff, 0x00AAAAff, 0xAAAAAAff,
       0x555555ff, 0xff5555ff, 0x55ff55ff, 0xffff55ff,
       0x5555ffff, 0xff55ffff, 0x55ffffff, 0xffffffff ],
+
+    // Windows 10 console
+    [ 0x0c0c0c00, 0xC50F1Fff, 0x13A10Eff, 0xC19C00ff,
+      0x0037DAff, 0x881798ff, 0x3A96DDff, 0xCCCCCCff,
+      0x767676ff, 0xE74856ff, 0x16C60Cff, 0xF9F1A5ff,
+      0x3B78FFff, 0xB4009Eff, 0x61D6D6ff, 0xF2F2F2ff ],
+
+    // VSCode
+    [ 0x00000000, 0xCD3131ff, 0x0DBC79ff, 0xE5E510ff,
+      0x2472C8ff, 0xBC3FBCff, 0x11A8CDff, 0xE5E5E5ff,
+      0x666666ff, 0xF14C4Cff, 0x23D18Bff, 0xF5F543ff,
+      0x3B8EEAff, 0xD670D6ff, 0x29B8DBff, 0xE5E5E5ff ]
 ];
 
 alias TM_RangeFlags = int;

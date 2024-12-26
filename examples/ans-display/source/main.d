@@ -48,12 +48,12 @@ class TermExample : TurtleGame
         }
         if (keyboard.isDownOnce("up"))
         {
-            palette = cast(TM_Palette)((palette - 1 + numPal) % numPal);
+            curpal = cast(TM_Palette)((curpal - 1 + numPal) % numPal);
             loadANS();
         }
         if (keyboard.isDownOnce("down"))
         {
-            palette = cast(TM_Palette)((palette + 1) % numPal);
+            curpal = cast(TM_Palette)((curpal + 1) % numPal);
             loadANS();
         }
     }
@@ -73,7 +73,7 @@ class TermExample : TurtleGame
 
     const(char)[] ansBytes;
     bool isCP437, isXP;
-    TM_Palette palette;
+    TM_Palette curpal;
 
     void loadANS()
     {
@@ -91,14 +91,14 @@ class TermExample : TurtleGame
     {
         ImageRef!RGBA fb = framebuffer();
 
-        console.palette(palette);
+        console.palette(curpal);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
 
         with (console)
         {
             cls;
             println("Press ← and → to cycle images");
-            println("Press ↑ and ↓ to cycle palettes");
+            println(format("Press ↑ and ↓ to cycle palettes (current = %s)", curpal));
             println;
             if (isXP)
                 printXP(ansBytes, -1);
