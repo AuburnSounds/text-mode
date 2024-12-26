@@ -56,6 +56,12 @@ class TermExample : TurtleGame
             curpal = cast(TM_Palette)((curpal + 1) % numPal);
             loadANS();
         }
+
+        // Set background to first color to have a complete color palette
+        ubyte r, g, b, a;
+        console.getPaletteEntry(0, r, g, b, a);
+        setBackgroundColor(rgb(r, g, b));
+
     }
 
     int imgIndex = 0;

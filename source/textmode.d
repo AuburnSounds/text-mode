@@ -162,7 +162,8 @@ enum TM_Palette
     tango,        ///
     vga,          /// 
     windows10,    ///
-    vscode        ///
+    vscode,       ///
+    gruvbox,      ///
 }
 
 /// Selected vintage font.
@@ -2025,6 +2026,11 @@ rgba16_t linearU16Premul(rgba_t c)
 }
 
 
+// IMPORTANT: all palette here have first color alpha at 0
+// in order to make the console transparent by default.
+// But, actual palettes didn't have that color 0 as 
+// transparent.
+
 static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
 [
     // Vintage (also: Windows XP console)
@@ -2051,7 +2057,7 @@ static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
       0x555753ff, 0xef2929ff, 0x8ae234ff, 0xfce94fff,
       0x729fcfff, 0xad7fa8ff, 0x34e2e2ff, 0xeeeeecff ],
 
-    // VGA
+    // VGA/CGA/EGA
     [ 0x00000000, 0xAA0000ff, 0x00AA00ff, 0xAA5500ff,
       0x0000AAff, 0xAA00AAff, 0x00AAAAff, 0xAAAAAAff,
       0x555555ff, 0xff5555ff, 0x55ff55ff, 0xffff55ff,
@@ -2067,7 +2073,14 @@ static immutable uint[16][TM_Palette.max+1] PALETTE_DATA =
     [ 0x00000000, 0xCD3131ff, 0x0DBC79ff, 0xE5E510ff,
       0x2472C8ff, 0xBC3FBCff, 0x11A8CDff, 0xE5E5E5ff,
       0x666666ff, 0xF14C4Cff, 0x23D18Bff, 0xF5F543ff,
-      0x3B8EEAff, 0xD670D6ff, 0x29B8DBff, 0xE5E5E5ff ]
+      0x3B8EEAff, 0xD670D6ff, 0x29B8DBff, 0xE5E5E5ff ],
+
+    // Gruvbox dark mode
+    // https://github.com/morhetz/gruvbox
+    [ 0x28282800, 0xCC241Dff, 0x98971Aff, 0xD79921ff,
+      0x458588ff, 0xB16286ff, 0x689D6Aff, 0xA89984ff,
+      0x928374ff, 0xFB4934ff, 0xB8BB26ff, 0xFABD2Fff,
+      0x83A598ff, 0xD3869Bff, 0x8EC07Cff, 0xEBDBB2ff ]
 ];
 
 alias TM_RangeFlags = int;
