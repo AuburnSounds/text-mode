@@ -3928,6 +3928,7 @@ nothrow:
         }
 
         // deflate uncompress stuff
+        // PERF: LRU cache for decompressed XP?
         {
             // assume a maximum size for typical ANSI art of 80x50 area.
             enum size_t MAX_W = 80;
@@ -3936,7 +3937,7 @@ nothrow:
             enum size_t MAX_XP_SIZE = 32 + PIX * MAX_W * MAX_H;
             // About 48k only!
 
-            sb_set_capacity(*scratch, cast(int)bodyLen);//MAX_XP_SIZE);
+            sb_set_capacity(*scratch, cast(int)bodyLen);
 
             // inflate
             size_t outlen = bodyLen;
@@ -3945,8 +3946,7 @@ nothrow:
             size_t inlen = input.length - header_size - footer_size;
             ubyte* output_start = *scratch;
             ubyte* output_next = *scratch;
-            int flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF
-                      | 0;//TINFL_FLAG_PARSE_ZLIB_HEADER;
+            int flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
             tinfl_status st = tinfl_decompress(infl_decomp, 
                                                bodyPtr, 
                                                &inlen,
@@ -3967,9 +3967,18 @@ nothrow:
             return;
         int width = read_s32_LE();
         int height = read_s32_LE();
+        if (width < 1 || height < 1)
+            return;
 
         for (int layer = 0; layer < numLayers; layer++)
         {
+            bool drawLayer = (layerMask & (1 << layer)) != 0;
+            if (!drawLayer)
+            {
+                skipBytes(width * height * 12);
+                continue;
+            }
+
             for (int x = 0; x < width; ++x)
             {
                 for (int y = 0; y < height; ++y)
@@ -4013,6 +4022,14 @@ nothrow:
             _input = _input[1..$];
             return r;
         }
+    }
+
+    void skipBytes(size_t b)
+    {
+        if (_input.length < b)
+            _input = _input[$..$];
+        else
+            _input = _input[$-b..$];
     }
 
     const(ubyte)[] _input;
