@@ -3492,7 +3492,7 @@ pure:
             else
             {
                 // UTF-8 decoding.
-                // Note: this looks verbose compared to how it's 
+                // Note: this looks verbose compared to how it's
                 // supposed to be decoded
                 if (ch <= 127)
                 {
@@ -3519,7 +3519,7 @@ pure:
                      char ch3 = s[inputPos+2];
                      if (ch2 > 191 || ch3 > 191)
                          goto decode_error;
-                     glyph = ((ch  & 0x0f) << 12) 
+                     glyph = ((ch  & 0x0f) << 12)
                            | ((ch2 & 0x3f) << 6)
                            |  (ch3 & 0x3f);
                      return 3;
@@ -3534,8 +3534,8 @@ pure:
                     char ch4 = s[inputPos+3];
                     if (ch2 > 191 || ch3 > 191 || ch4 > 191)
                         goto decode_error;
-                    glyph = ((ch  & 0x07) << 18) 
-                          | ((ch2 & 0x3f) << 12) 
+                    glyph = ((ch  & 0x07) << 18)
+                          | ((ch2 & 0x3f) << 12)
                           | ((ch3 & 0x3f) << 6)
                           |  (ch4 & 0x3f);
                     return 4;
@@ -3545,7 +3545,7 @@ pure:
             }
         }
     }
-    
+
     void next()
     {
         char ch;
@@ -3784,7 +3784,7 @@ pure:
         if (c < 16)
             return c; // base 16 colors
 
-        // Else match into the palette of 16 colors, since we don't 
+        // Else match into the palette of 16 colors, since we don't
         // want to display more than 16 colors anyway.
 
         int r, g, b;
@@ -3870,6 +3870,12 @@ nothrow:
         this.baseY   = baseY;
     }
 
+    ~this()
+    {
+        console.current.ccol = baseX;
+        console.current.crow = baseY;
+    }
+
     /*
     #-----xp format version (32)
     A-----number of layers (32)
@@ -3888,7 +3894,7 @@ nothrow:
     //            in REXPaint manual.txt
     void interpret(const(ubyte)[] input, 
                    int layerMask,   // which layers to draw
-                   ubyte** scratch, // *scratch is a stretchy buffer 
+                   ubyte** scratch, // *scratch is a stretchy buffer
                    tinfl_decompressor* infl_decomp)
         @trusted
     {
@@ -3908,10 +3914,10 @@ nothrow:
             if (popByte() != 0x08)
                 return; // not DEFLATE
             ubyte flags = popByte();
-            assert(flags == 0); // Fortunately REXpaint seems to be 0 here
+            assert(flags == 0); // REXpaint seems to be 0 here
             read_s32_LE(); // skip timestamp
             ubyte xflags = popByte();
-            assert(xflags == 0); // Fortunately REXpaint seems to be 0 here
+            assert(xflags == 0); // REXpaint seems to be 0 here
             popByte(); // ignore OS
 
             // other stuff is optional so DEFLATE data begins here
@@ -3930,13 +3936,6 @@ nothrow:
         // deflate uncompress stuff
         // PERF: LRU cache for decompressed XP?
         {
-            // assume a maximum size for typical ANSI art of 80x50 area.
-            enum size_t MAX_W = 80;
-            enum size_t MAX_H = 50;
-            enum size_t PIX = 12;
-            enum size_t MAX_XP_SIZE = 32 + PIX * MAX_W * MAX_H;
-            // About 48k only!
-
             sb_set_capacity(*scratch, cast(int)bodyLen);
 
             // inflate
@@ -3947,11 +3946,11 @@ nothrow:
             ubyte* output_start = *scratch;
             ubyte* output_next = *scratch;
             int flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
-            tinfl_status st = tinfl_decompress(infl_decomp, 
-                                               bodyPtr, 
+            tinfl_status st = tinfl_decompress(infl_decomp,
+                                               bodyPtr,
                                                &inlen,
-                                               output_start, 
-                                               output_next, 
+                                               output_start,
+                                               output_next,
                                                &outlen,
                                                flags);
             if (st != TINFL_STATUS_DONE)
@@ -3975,7 +3974,7 @@ nothrow:
             bool drawLayer = (layerMask & (1 << layer)) != 0;
             if (!drawLayer)
             {
-                skipBytes(width * height * 12);
+                skipBytes(12uL * width * height);
                 continue;
             }
 
@@ -4045,16 +4044,23 @@ void makeGaussianKernel(int len,
                         float mu,
                         float[] outtaps) pure
 {
+    static double gaussian(double x,
+                           double mu,
+                           double sigma) pure
+    {
+        enum SQRT2 = 1.41421356237;
+        return 0.5 * erf((x - mu) / (SQRT2 * sigma));
+    }
     assert( (len % 2) == 1);
     assert(len <= outtaps.length);
 
     int taps = len/2;
 
-    double last_int = def_int_gaussian(-taps, mu, sigma);
+    double last_int = gaussian(-taps, mu, sigma);
     double sum = 0;
     for (int x = -taps; x <= taps; ++x)
     {
-        double new_int = def_int_gaussian(x + 1, mu, sigma);
+        double new_int = gaussian(x + 1, mu, sigma);
         double c = new_int - last_int;
 
         last_int = new_int;
@@ -4086,10 +4092,7 @@ double erf(double x) pure
     return (x >= 0 ? 1 : -1) * y;
 }
 
-double def_int_gaussian(double x, double mu, double sigma) pure
-{
-    return 0.5 * erf((x - mu) / (1.41421356237 * sigma));
-}
+
 
 int abs_int32(int x) pure
 {
