@@ -461,17 +461,22 @@ nothrow:
         Set/get palette entries.
 
         Params: entry Palette index, must be 0 <= entry <= 15
-                r Red value, 0 to 255
-                g Green value, 0 to 255
-                b Blue value, 0 to 255
-                a Alpha value, 0 to 255.
+                r Red value.
+                g Green value.
+                b Blue value.
+                a Alpha value.
+        All values are clamped to [0 to 255].
 
         When used as background color, alpha is considered 255.
      */
     void setPaletteEntry(int entry,
-                         ubyte r, ubyte g, ubyte b, ubyte a) pure
+                         int r, int g, int b, int a) pure
     {
-        rgba_t color = rgba_t(r, g, b, a);
+        ubyte br = clamp0_255(r);
+        ubyte bg = clamp0_255(g);
+        ubyte bb = clamp0_255(b);
+        ubyte ba = clamp0_255(a);
+        rgba_t color = rgba_t(br, bg, bb, ba);
         if (_palette[entry] != color)
         {
             _palette[entry]      = color;
@@ -497,6 +502,18 @@ nothrow:
                          out ubyte g,
                          out ubyte b,
                          out ubyte a) pure const
+    {
+        r = _palette[entry].r;
+        g = _palette[entry].g;
+        b = _palette[entry].b;
+        a = _palette[entry].a;
+    }
+    ///ditto
+    void getPaletteEntry(int entry,
+                         out int r,
+                         out int g,
+                         out int b,
+                         out int a) pure const
     {
         r = _palette[entry].r;
         g = _palette[entry].g;
@@ -2006,7 +2023,15 @@ rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha) pure @trusted
     // * sign multiply by 32897
     // * right-shift logically by 23
     // Thanks https://godbolt.org/
-    product *= _mm_set1_epi32(32897); // PERF: this leads to inefficient code with several pmul
+    version(LDC)
+        product *= _mm_set1_epi32(32897); // PERF: this leads to inefficient code with several pmul
+    else
+    {
+        product[0] *= 32897;
+        product[1] *= 32897;
+        product[2] *= 32897;
+        product[3] *= 32897;
+    }
     product = _mm_srli_epi32(product, 23);
     __m128i c = _mm_packs_epi32(product, zero);
     c = _mm_packus_epi16(c, zero);
@@ -4052,4 +4077,11 @@ double def_int_gaussian(double x, double mu, double sigma) pure
 int abs_int32(int x) pure
 {
     return x >= 0 ? x : -x;
+}
+
+ubyte clamp0_255(int x) pure
+{
+    if (x < 0) x = 0;
+    if (x > 255) x = 255;
+    return cast(ubyte)x;
 }
