@@ -544,8 +544,6 @@ nothrow:
         for (int n = 0; n < 16; ++n)
         {
             rgba_t e = _palette[n];
-            if (e.a == 0)
-                continue; // can't match transparent color
             int diffR = abs_int32(e.r - r);
             int diffG = abs_int32(e.g - g);
             int diffB = abs_int32(e.b - b);
@@ -554,6 +552,9 @@ nothrow:
                     + 2 * diffB * diffB;
             if (err < bestScore)
             {
+                // Exact match, early exit
+                if (err == 0) 
+                    return n;
                 best = n;
                 bestScore = err;
             }
@@ -1545,7 +1546,7 @@ private:
             for (int col = textRect.left; col < textRect.right; ++col)
             {
                 if (_charDirty[col + _columns * row])
-                    drawChar(col, row);
+                    drawCharToBack(col, row);
             }
         }
     }
@@ -1715,8 +1716,7 @@ private:
         _dirtyOut = false;
     }
 
-
-    void drawChar(int col, int row) @trusted
+    void drawCharToBack(int col, int row) @trusted
     {
         TM_CharData cdata = charAt(col, row);
         int cw = charWidth();
@@ -3870,26 +3870,6 @@ nothrow:
         this.baseY   = baseY;
     }
 
-    ~this()
-    {
-        console.current.ccol = baseX;
-        console.current.crow = baseY;
-    }
-
-    /*
-    #-----xp format version (32)
-    A-----number of layers (32)
-    /----image width (32)
-    |    image height (32)
-    |  /-ASCII code (32) (little-endian!)
-    B| | foreground color red (8)
-    |  | foreground color green (8)
-    |  | foreground color blue (8)
-    | C| background color red (8)
-    |  | background color green (8)
-    \--\-background color blue (8)
-    */
-
     // Reference: Appendix B: .xp Format Specification
     //            in REXPaint manual.txt
     void interpret(const(ubyte)[] input, 
@@ -3964,17 +3944,16 @@ nothrow:
         int numLayers = read_s32_LE();
         if (numLayers < 1 || numLayers > 9)
             return;
-        int width = read_s32_LE();
-        int height = read_s32_LE();
-        if (width < 1 || height < 1)
-            return;
 
         for (int layer = 0; layer < numLayers; layer++)
         {
+            int width = read_s32_LE();
+            int height = read_s32_LE();
+
             bool drawLayer = (layerMask & (1 << layer)) != 0;
             if (!drawLayer)
             {
-                skipBytes(12uL * width * height);
+                skipBytes(10uL * width * height);
                 continue;
             }
 
@@ -3992,11 +3971,11 @@ nothrow:
                     ubyte bg_b = popByte();
                     if (bg_r == 255 && bg_g == 0 && bg_b == 255)
                         continue;
+
                     // PERF: LRU cache for matching colors
                     console.fg(console.findColorMatch(fg_r, fg_g, fg_b));
                     console.bg(console.findColorMatch(bg_r, bg_g, bg_b));
-                    console.locate(baseX + x, baseY + y);
-                    console.print(ch);
+                    console.drawChar(baseX + x, baseY + y, ch);
                 }
             }
         }
@@ -4028,7 +4007,7 @@ nothrow:
         if (_input.length < b)
             _input = _input[$..$];
         else
-            _input = _input[$-b..$];
+            _input = _input[b..$];
     }
 
     const(ubyte)[] _input;
