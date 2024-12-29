@@ -661,24 +661,10 @@ nothrow:
     ///ditto
     void print(dchar ch) pure
     {
-        int col = current.ccol;
-        int row = current.crow;
-
-        if (validPosition(col, row))
-        {
-            TM_CharData* cdata = &_text[col + row * _columns];
-            cdata.glyph = ch;
-            cdata.color = current.colorByte;
-            cdata.style = current.style;
-            _dirtyValidation = true;
-        }
-
+        drawChar(current.ccol, current.crow, ch);
         current.ccol += 1;
-
         if (current.ccol >= _columns)
-        {
             newline();
-        }
     }
     ///ditto
     void println(const(char)[] s) pure
@@ -1122,7 +1108,7 @@ nothrow:
         dx = dx / cw;
         dy = (dy + ch - 1) / ch;
         assert(dx >= 0 && dy >= 0);
-        if (dx < 0 || dy < 0 || dx >= _columns || dy >= rows)
+        if (dx < 0 || dy < 0 || dx >= _columns || dy >= _rows)
             return false;
         *column = dx;
         *row    = dy;
@@ -1496,6 +1482,10 @@ private:
 
         for (int row = 0; row < _rows; ++row)
         {
+            if (row == _rows-3)
+            {
+                int a = 0;
+            }
             for (int col = 0; col < _columns; ++col)
             {
                 int icell = col + row * _columns;
