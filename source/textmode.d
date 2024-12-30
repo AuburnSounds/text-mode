@@ -38,7 +38,7 @@ enum : TM_Color
     TM_lblue    = 12, ///
     TM_lmagenta = 13, ///
     TM_lcyan    = 14, ///
-    TM_white    = 15 ///
+    TM_white    = 15  ///
 }
 
 /**
@@ -237,9 +237,13 @@ struct TM_Options
     /// This changes the blur filter width (1.0f means default).
     float blurScale        = 1.0f;
 
-    /// Whether foreground/background color contributes to blur.
+    /// Whether foreground color contributes to blur.
     bool blurForeground    = true;
-    bool blurBackground    = true; ///ditto
+
+    /// Whether background color contributes to blur.
+    /// Note that this usually gives unwanted results together with 
+    /// blink.
+    bool blurBackground    = false;
 
     /// Luminance blue noise texture, applied to blur effect.
     bool noiseTexture      = true;
@@ -1482,10 +1486,6 @@ private:
 
         for (int row = 0; row < _rows; ++row)
         {
-            if (row == _rows-3)
-            {
-                int a = 0;
-            }
             for (int col = 0; col < _columns; ++col)
             {
                 int icell = col + row * _columns;
@@ -1499,7 +1499,7 @@ private:
                 bool redraw = false;
                 if (_dirtyAllChars)
                     redraw = true;
-                if (text != cache)
+                else if (!equalCharData(text, cache))
                     redraw = true; // chardata changed
                 else if (_paletteDirty[text.color & 0x0f])
                     redraw = true; // fg color changed
@@ -4073,4 +4073,13 @@ ubyte clamp0_255(int x) pure
     if (x < 0) x = 0;
     if (x > 255) x = 255;
     return cast(ubyte)x;
+}
+
+// If == is used on TM_CharData, then filling bytes could lead  to
+// incorrect invalidation!
+bool equalCharData(TM_CharData a, TM_CharData b) pure
+{
+    return a.glyph == b.glyph 
+        && a.color == b.color
+        && a.style == b.style;
 }
