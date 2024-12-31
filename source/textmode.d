@@ -69,7 +69,7 @@ nothrow:
     ubyte color     = (TM_black << 4) + TM_grey;
 
     /// Style of that character, a combination of TM_Style flags.
-    TM_Style style;
+    TM_Style style  = 0;
 }
 
 /**
@@ -314,6 +314,11 @@ nothrow:
         updateTextBufferSize(columns, rows);
         updateBackBufferSize();
         cls();
+
+        // First draw must not rely on various caches.
+        _cache[] = _text[];
+        _cachedPalette = _palette;
+        _lastBorderColor = _palette[0];
     }
     ///ditto
     int[2] size() pure const
@@ -483,8 +488,7 @@ nothrow:
         rgba_t color = rgba_t(br, bg, bb, ba);
         if (_palette[entry] != color)
         {
-            _palette[entry]      = color;
-            _paletteDirty[entry] = true;
+            _palette[entry]  = color;
             _dirtyValidation = true;
         }
     }
@@ -866,7 +870,7 @@ nothrow:
 
     /**
         Fill a rectangle with a character, using the current 
-        foreground and background colors.
+        foreground, background, and style.
 
         This doesn't use, nor change, cursor position.
      */
@@ -877,17 +881,9 @@ nothrow:
 
         for (int row = y; row < y + h; ++row)
         {
-            if ( ! validRow(row) )
-                continue;
             for (int col = x; col < x + w; ++col)
             {
-                if ( ! validPosition(col, row) )
-                    continue;
-                TM_CharData* cd = &charAt(col, row);
-                cd.glyph = ch;
-                cd.style = current.style;
-                cd.color = current.colorByte;
-                _dirtyValidation = true;
+                drawChar(col, row, ch);
             }
         }
     }
@@ -973,14 +969,19 @@ nothrow:
     void render()
         @system // memory-safe if `outbuf()` called and memory-safe
     {
-        // 0. Recompute placement of text in post buffer.
+        // 1. Recompute placement of text in post buffer.
         recomputeLayout();
 
-        // 1. Invalidate characters that need redraw in _back buffer.
+        // 2. Compute which colors of the palette effectively 
+        // changed. So that apps are allowed to load a pre-defined 
+        // palette and tweak its colors each frame without redraw.
+        computeChangedColors();
+
+        // 3. Invalidate characters that need redraw in _back buffer.
         // After that, _charDirty tells if a character need redraw.
         rect_t[2] textRect = invalidateChars();
 
-        // 2. Draw chars in original size, only those who changed.
+        // 4. Draw chars in original size, only those who changed.
         drawAllChars(textRect[0]);
 
         // from now on, consider _text and _back is up-to-date.
@@ -989,7 +990,7 @@ nothrow:
         _dirtyAllChars = false;
         _cache[] = _text[];
 
-        // 3. Apply scale, character margins, etc.
+        // 5. Apply scale, character margins, etc.
         // Take characters in _back and put them in _post, into the
         // final resolution.
         // This only needs done for _charDirty chars.
@@ -998,16 +999,17 @@ nothrow:
         // Return rectangle that changed
         rect_t[2] postRect = backToPost(textRect);
 
-        // Dirty border color can affect out and post buffers redraw
-        _paletteDirty[] = false;
+        // Changed palette color may affect out and post buffers 
+        // redraw because of borders.
+        _cachedPalette = _palette;
 
-        // 4. Blur go here.
+        // 6. Blur go here.
         applyBlur(postRect[1]); // PERF: give list of rectangles
 
-        // 5. Other effects. Screen simulation, etc.
+        // 7. Other effects. Screen simulation, etc.
         applyEffects(postRect[0]);
 
-        // 6. Blend into out buffer.
+        // 8. Blend into out buffer.
         postToOut(textRect[0]);
     }
 
@@ -1171,7 +1173,10 @@ private:
     bool _dirtyPost       = true;
     bool _dirtyOut        = true;
 
-    bool[16] _paletteDirty; // true if this color changed
+    rgba_t[16] _cachedPalette; // Last used color color.
+    bool[16] _paletteChanged; // Palette changed (at point of use).
+    rgba_t _lastBorderColor; // Last used border color.
+
     rect_t[2]  _lastBounds;   // last computed dirty rectangles
 
     // Size of bitmap backing buffer.
@@ -1390,6 +1395,8 @@ private:
             void* alloc = realloc_c17(_text.ptr, bytes * 2);
             _text  = (cast(TM_CharData*)alloc)[    0..  cells];
             _cache = (cast(TM_CharData*)alloc)[cells..2*cells];
+            TM_CharData[] text = _text;
+            TM_CharData[] cache = _cache;
 
             alloc = realloc_c17(_charDirty.ptr, cells * bool.sizeof);
             _charDirty = (cast(bool*)alloc)[0..cells];
@@ -1462,6 +1469,14 @@ private:
         }
     }
 
+    void computeChangedColors()
+    {
+        for (int c = 0; c < 16; ++c)
+        {
+            _paletteChanged[c] = _palette[c] != _cachedPalette[c];
+        }
+    }
+
     // Reasons to redraw:
     //  - their fg or bg color changed
     //  - their fg or bg color PALETTE changed
@@ -1501,12 +1516,13 @@ private:
                     redraw = true;
                 else if (!equalCharData(text, cache))
                     redraw = true; // chardata changed
-                else if (_paletteDirty[text.color & 0x0f])
+                else if (_paletteChanged[text.color & 0x0f])
                     redraw = true; // fg color changed
-                else if (_paletteDirty[text.color >>> 4])
+                else if (_paletteChanged[text.color >>> 4])
                     redraw = true; // bg color changed
                 else if (blink && (_cachedBlinkOn != _blinkOn))
                     redraw = true; // text blinked on or off
+
                 if (redraw)
                     bounds = rectMergeWithPoint(bounds, col, row);
 
@@ -1554,8 +1570,11 @@ private:
         {
             drawBorder = true;
         }
-        if (_paletteDirty[_options.borderColor])
+
+        rgba_t borderColor = _palette[_options.borderColor];
+        if (borderColor != _lastBorderColor)
             drawBorder = true;
+        _lastBorderColor = borderColor;
 
         if (drawBorder)
         {
