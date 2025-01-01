@@ -40,7 +40,7 @@ class TermExample : TurtleGame
     {
         ImageRef!RGBA fb = framebuffer();
 
-        console.palette(TM_Palette.campbell);
+        console.palette(TM_paletteCampbell);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
 
         with (console)
@@ -54,9 +54,9 @@ class TermExample : TurtleGame
             save();
 
             // Change foreground color (0 to 15)
-            fg(TM_white);
-            println("≐≑≒≓≔≕≖≗≘≙≚≛≜≝≞≟"); 
-            bg(TM_blue);
+            fg(TM_colorWhite);
+
+            bg(TM_colorBlue);
             println("on blue background");
 
             // Restore state. Warning: this restore cursor position!
@@ -69,24 +69,24 @@ class TermExample : TurtleGame
             //   - bold
             //   - shiny (sort of bloom)
             //   - underline
-            style(TM_bold);
+            style(TM_styleBold);
             println("This is bold");
 
-            style(TM_shiny);
+            style(TM_styleShiny);
             print("This is ");
             fg(14);
             print("shiny");
 
-            style(TM_shiny | TM_blink);
+            style(TM_styleShiny | TM_styleBlink);
             println(" and blinking");
 
-            style(TM_underline);
-             fg(TM_lgreen);
+            style(TM_styleUnder);
+             fg(TM_colorLGreen);
             println("This is underline");
 
             render();
         }
-    } 
+    }
 
     TM_Console console;
 }

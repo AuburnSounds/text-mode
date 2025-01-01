@@ -40,7 +40,7 @@ class TermExample : TurtleGame
     {
         ImageRef!RGBA fb = framebuffer();
 
-        console.palette(TM_Palette.campbell);
+        console.palette(TM_paletteCampbell);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
 
         with (console)
@@ -54,17 +54,17 @@ class TermExample : TurtleGame
                 locate(x+2, y+2);
                 cprint(name);
             }
-            fg(TM_lcyan);
+            fg(TM_colorLCyan);
             println("        ═════ BOX STYLE DEMO ═════");
 
-            demo( 1,  2, TM_white, TM_boxThin,      "TM_boxThin");
-            demo( 1,  8, TM_lblue, TM_boxLarge,     "TM_boxLarge");
-            demo( 1, 14, TM_lcyan, TM_boxLargeH,    "TM_boxLargeH");
-            demo( 1, 20, TM_yellow,TM_boxLargeV,    "TM_boxLargeV");
-            demo(21,  2, TM_lblue, TM_boxHeavy,     "TM_boxHeavy");
-            demo(21,  8, TM_lcyan, TM_boxHeavyPlus, "TM_boxHeavyPlus");
-            demo(21, 14, TM_yellow, TM_boxDouble,   "TM_boxDouble");
-            demo(21, 20, TM_white, TM_boxDoubleH,   "TM_boxDoubleH");
+            demo( 1,  2, TM_colorWhite, TM_boxThin,      "TM_boxThin");
+            demo( 1,  8, TM_colorLBlue, TM_boxLarge,     "TM_boxLarge");
+            demo( 1, 14, TM_colorLCyan, TM_boxLargeH,    "TM_boxLargeH");
+            demo( 1, 20, TM_colorYellow,TM_boxLargeV,    "TM_boxLargeV");
+            demo(21,  2, TM_colorLBlue, TM_boxHeavy,     "TM_boxHeavy");
+            demo(21,  8, TM_colorLCyan, TM_boxHeavyPlus, "TM_boxHeavyPlus");
+            demo(21, 14, TM_colorYellow, TM_boxDouble,   "TM_boxDouble");
+            demo(21, 20, TM_colorWhite, TM_boxDoubleH,   "TM_boxDoubleH");
             render();
         }
     }

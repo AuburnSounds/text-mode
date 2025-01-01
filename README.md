@@ -61,9 +61,9 @@ with (console)
     save();
  
     // Change foreground color (0 to 15)
-    fg(TM_red);
+    fg(TM_colorRed);
     print("This is red text ");
-    bg(TM_blue);
+    bg(TM_colorBlue);
     println("on blue background");
  
     // Restore state. Warning: this restore cursor position!
@@ -76,16 +76,16 @@ with (console)
     //   - bold
     //   - shiny (sort of bloom)
     //   - underline
-    style(TM_bold);
+    style(TM_styleBold);
     println("This is bold");
  
-    style(TM_shiny);
+    style(TM_styleShiny);
     print("This is ");
     fg(14);
     println("shiny");
  
-    style(TM_underline);
-    fg(TM_lgreen);
+    style(TM_styleUnder);
+    fg(TM_colorLGreen);
     println("This is underline");
  
     render();
@@ -170,9 +170,9 @@ Here is reproduced the definition of `TM_Options`:
 /// Various options to change behaviour of the library.
 struct TM_Options
 {
-    TM_BlendMode blendMode = TM_BlendMode.sourceOver; ///
-    TM_HorzAlign halign    = TM_HorzAlign.center; ///
-    TM_VertAlign valign    = TM_VertAlign.middle; ///
+    TM_BlendMode blendMode = TM_blendSourceOver; ///
+    TM_HorzAlign halign    = TM_horzAlignCenter; ///
+    TM_VertAlign valign    = TM_vertAlignMiddle; ///
 
     /// The output buffer is considered unchanged between calls.
     /// It is considered our changes are still there and not erased,

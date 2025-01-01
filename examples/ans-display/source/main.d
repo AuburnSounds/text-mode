@@ -19,7 +19,7 @@ class TermExample : TurtleGame
 
     override void load()
     {
-        console.palette(TM_Palette.vga);
+        console.palette(TM_paletteVga);
         setBackgroundColor(color("black"));
         console.size(80, 50);
         loadANS();
