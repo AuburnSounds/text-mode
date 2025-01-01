@@ -4109,7 +4109,7 @@ nothrow:
             bool drawLayer = (layerMask & (1<<layer)) != 0;
             if (!drawLayer)
             {
-                skipBytes(10uL * width * height);
+                skipBytes(cast(size_t)10 * width * height);
                 continue;
             }
 
