@@ -208,6 +208,11 @@ enum : TM_Palette
 }
 
 /**
+    Number of pre-defined palettes.
+*/
+enum TM_PALETTE_NUM = 8;
+
+/**
     Selected vintage font.
     There is only one font, our goal is to provide a Unicode
     8x8 font suitable for most languages. So other font
@@ -509,6 +514,7 @@ nothrow:
     */
     void palette(TM_Palette palette)
     {
+        assert(palette >= 0 && palette < TM_PALETTE_NUM);
         for (int entry = 0; entry < 16; ++entry)
         {
             uint col = PALETTE_DATA[palette][entry];
@@ -2175,20 +2181,25 @@ rgba_t blendColor(rgba_t fg, rgba_t bg, ubyte alpha)
     pure @trusted
 {
     ubyte invAlpha = cast(ubyte)(~cast(int)alpha);
-    __m128i alphaMask = _mm_set1_epi32( (invAlpha << 16) | alpha ); // [ alpha invAlpha... (4x)]
+     // [ alpha invAlpha... (4x)]
+    __m128i alphaMask;
+    alphaMask = _mm_set1_epi32((invAlpha << 16)|alpha);
     __m128i mmfg = _mm_cvtsi32_si128( *cast(int*)(&fg) );
     __m128i mmbg = _mm_cvtsi32_si128( *cast(int*)(&bg) );
     __m128i zero = _mm_setzero_si128();
-    __m128i colorMask = _mm_unpacklo_epi8(mmfg, mmbg); // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a 0 (8x) ]
-    colorMask = _mm_unpacklo_epi8(colorMask, zero); // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a ]
-    __m128i product = _mm_madd_epi16(colorMask, alphaMask); // [ fg[i]*alpha+bg[i]*invAlpha (4x) ]
+    // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a 0 (8x) ]
+    __m128i colorMask = _mm_unpacklo_epi8(mmfg, mmbg);
+    // [fg.r bg.r fg.g bg.g fg.b bg.b fg.a bg.a ]
+    colorMask = _mm_unpacklo_epi8(colorMask, zero);
+     // [ fg[i]*alpha+bg[i]*invAlpha (4x) ]
+    __m128i product = _mm_madd_epi16(colorMask, alphaMask);
 
     // To divide a ushort by 255, LLVM suggests to
     // * sign multiply by 32897
     // * right-shift logically by 23
     // Thanks https://godbolt.org/
     version(LDC)
-        product *= _mm_set1_epi32(32897); // PERF: this leads to inefficient code with several pmul
+        product *= _mm_set1_epi32(32897);
     else
     {
         product[0] *= 32897;
@@ -2220,7 +2231,7 @@ rgba16_t linearU16Premul(rgba_t c)
 // But, actual palettes didn't have that color 0 as 
 // transparent.
 
-static immutable uint[16][8] PALETTE_DATA =
+static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
 [
     // Vintage (also: Windows XP console)
     [ 0x00000000, 0x800000ff, 0x008000ff, 0x808000ff,
@@ -2300,20 +2311,20 @@ int[2] fontCharSize(TM_Font font) pure
 const(ubyte)[] getGlyphData(TM_Font font, dchar glyph) pure
 {
     assert(font == TM_font8x8);
-    const(TM_UniRange)[] fontData = BUILTIN_FONTS[font].fontData;
+    const(TM_UniRange)[] fd = BUILTIN_FONTS[font].fontData;
 
     int ch = 8;
-    for (size_t r = 0; r < fontData.length; ++r)
+    for (size_t r = 0; r < fd.length; ++r)
     {
-        if (glyph >= fontData[r].start && glyph < fontData[r].stop)
+        if (glyph >= fd[r].start && glyph < fd[r].stop)
         {
-            TM_RangeFlags flags = fontData[r].flags;
+            TM_RangeFlags flags = fd[r].flags;
 
             if ( (flags & TM_singleGlyph) != 0)
-                return fontData[r].glyphData[0..ch];
+                return fd[r].glyphData[0..ch];
 
-            uint index = glyph - fontData[r].start;
-            return fontData[r].glyphData[index*ch..index*ch+ch];
+            uint index = glyph - fd[r].start;
+            return fd[r].glyphData[index*ch..index*ch+ch];
         }
     }
 

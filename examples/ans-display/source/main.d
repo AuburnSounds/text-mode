@@ -35,7 +35,7 @@ class TermExample : TurtleGame
         if (keyboard.isDownOnce("escape")) exitGame();
 
         int numImg = cast(int) ANSI_IMAGES.length;
-        int numPal = TM_Palette.max + 1;
+        int numPal = TM_PALETTE_NUM;
         if (keyboard.isDownOnce("left"))
         {
             imgIndex = (imgIndex - 1 + numImg) % numImg;
