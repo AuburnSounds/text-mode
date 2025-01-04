@@ -1197,7 +1197,7 @@ nothrow:
         assert(cw >= 0);
         assert(ch >= 0);
         dx = dx / cw;
-        dy = (dy + ch - 1) / ch;
+        dy = dy / ch;
         assert(dx >= 0 && dy >= 0);
         if (dx < 0 || dy < 0 || dx >= _cols || dy >= _rows)
             return false;
