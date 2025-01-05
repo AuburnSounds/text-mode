@@ -645,19 +645,22 @@ nothrow:
         if (_options.blendMode != options.blendMode)
             _dirtyOut = true;
 
+        bool blurChanged = 
+               _options.borderShiny != options.borderShiny
+            || _options.blurAmount != options.blurAmount
+            || _options.blurScale != options.blurScale
+            || _options.blurForeground
+            != options.blurForeground
+            || _options.blurBackground
+            != options.blurBackground;
+
         // A few of those are overreacting.
         // for example, changing blur amount or tonemapping
         // may not redo the blur convolution.
         if (_options.halign != options.halign
          || _options.valign != options.valign
          || _options.borderColor != options.borderColor
-         || _options.borderShiny != options.borderShiny
-         || _options.blurAmount != options.blurAmount
-         || _options.blurScale != options.blurScale
-         || _options.blurForeground
-             != options.blurForeground
-         || _options.blurBackground
-             != options.blurBackground
+         || blurChanged
          || _options.tonemapping != options.tonemapping
          || _options.tonemappingRatio
              != options.tonemappingRatio
@@ -667,6 +670,9 @@ nothrow:
             _dirtyPost = true;
             _dirtyOut = true;
         }
+        if (blurChanged)
+            invalidateBlur(true);
+
         _options = options;
     }
 
@@ -1028,9 +1034,6 @@ nothrow:
             // Consider output dirty
             _dirtyOut = true;
 
-            // No blur content can survive that.
-            _dirtyAllBlur = true;
-
             // resize post buffer(s)
             updatePostBuffersSize(width, height);
         }
@@ -1291,11 +1294,13 @@ private:
     // a buffer that composites _post and _blur
     rgba_t[] _final  = null;
 
-    // if true, blur must be redone for chars that have blur
-    bool _dirtyBlur = false;
+    // Blur is invalidated by filling it with black,
+    // to avoid too much recompute.
+    bool _blurIsCompletelyBlack = false;
 
-    // if true, ALL blur must be redone, buffer have resized
-    bool _dirtyAllBlur = false;
+    // The blur must be recomputed, since it's done 
+    // differently in the first place (like kernel change).
+    bool _dirtyBlur = false;
 
     // if true, whole final buffer must be redone
     bool _dirtyFinal = false;
@@ -1549,6 +1554,7 @@ private:
             _postWidth = width;
             _postHeight = height;
             _dirtyPost = true;
+            invalidateBlur(false);
         }
     }
 
@@ -1562,6 +1568,27 @@ private:
         _emitH = (cast(rgba16_t* )p)[0..n]; p += n * 8;
         _blur  = (cast(rgba32f_t*)p)[0..n]; p += n * 16;
         return p - pold;
+    }
+
+    // called when blur needs to be wholly evaluated,
+    // however it's so expensive we make it black and mark
+    // it as such, since this saves computations.
+    // See Issue #11.
+    void invalidateBlur(bool blurPropertiesChanged) @trusted
+    {
+        size_t bytes = rgba32f_t.sizeof * _blur.length;
+        memset(_blur.ptr, 0, bytes);
+
+        // so that next invalidateChars can take that into
+        // account.
+        _blurIsCompletelyBlack = true;
+
+        // Did the blur shape/lighting changed itself?
+        // or was just a resize.
+        _dirtyBlur = blurPropertiesChanged;
+
+        // Must revalidate, since blur was cleared.
+        _dirtyValidation = true;
     }
 
     void updateFilterSize(int filterSize)
@@ -1581,7 +1608,7 @@ private:
             double mu = 0.0;
             makeGaussianKernel(filterSize, sigma, mu,
                                _blurKernel[]);
-            _dirtyBlur = true;
+            invalidateBlur(true);
             _dirtyFinal = true;
         }
     }
@@ -1610,7 +1637,7 @@ private:
     rect_t[2] invalidateChars()
     {
         // validation results might not need recompute
-        if (!_dirtyValidation && !_dirtyBlur)
+        if (!_dirtyValidation)
             return _lastBounds;
 
         _dirtyValidation = false;
@@ -1654,18 +1681,29 @@ private:
                 // Did this char _blur_ layer change?
                 // PERF: some palette change do not trigger
                 //       blur changes, rare.
-                bool blurChanged = redraw
-                                && (shiny || cShiny);
-                blurChanged = blurChanged
-                                || (_dirtyBlur && shiny);
-                if (blurChanged)
+
+                // Reasons to recompute blur:
+                // 1. A char changed its non-blur display,
+                //    or the blur shape has changed,
+                //    and the character is shiny.
+                bool doBlur = (redraw || _dirtyBlur 
+                              || _blurIsCompletelyBlack) && shiny;
+                // 2. A char lost its shininess, and the 
+                //    blur buffer isn't all black.
+                if (!shiny && cShiny && !_blurIsCompletelyBlack)
+                    doBlur = true;
+
+                if (doBlur)
                     bBounds = rectMergeWithPoint(bBounds,
                                                  col, row);
 
                 _charDirty[icell] = redraw;
             }
         }
+
+        _blurIsCompletelyBlack = false;
         _dirtyBlur = false;
+
         _lastBounds[0] = bounds;
         _lastBounds[1] = bBounds;
         _cachedBlinkOn = _blinkOn;
@@ -1915,21 +1953,7 @@ private:
         rect_t wholeOut = rectWithCoords(0, 0,
                                          _postWidth,
                                          _postHeight);
-        if (_dirtyAllBlur)
-        {
-            _dirtyAllBlur = false;
-            if (updateRect.isEmpty)
-            {
-                size_t bytes = rgba32f_t.sizeof
-                               * _blur.length;
-                memset(_blur.ptr, 0, bytes);
-                return;
-            }
 
-            // PERF: technically only need to clear areas
-            // from last updateRect done
-            updateRect = wholeOut;
-        }
 
         if (updateRect.isEmpty)
             return;
