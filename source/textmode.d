@@ -1620,6 +1620,12 @@ private:
             bool differ = _palette[c] != _cachedPalette[c];
             _paletteChanged[c] = differ;
         }
+
+        // Did the border color change?
+        rgba_t borderColor = _palette[_options.borderColor];
+        if (borderColor != _lastBorderColor)
+            _dirtyPost = true;
+        _lastBorderColor = borderColor;
     }
 
     // Reasons to redraw:
@@ -1738,17 +1744,15 @@ private:
             drawBorder = true;
         }
 
-        rgba_t borderColor = _palette[_options.borderColor];
-        if (borderColor != _lastBorderColor)
-            drawBorder = true;
-        _lastBorderColor = borderColor;
 
         if (drawBorder)
         {
             rgba_t border = _palette[_options.borderColor];
 
             // PERF: only draw the border areas
-            _post[] = border;
+            size_t pl = _post.length;
+            for (size_t p = 0; p < pl; ++p)
+                _post[p] = border;
 
             // now also fill _emit, and since border is
             // never <shiny> (huh???)
