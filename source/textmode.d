@@ -323,6 +323,11 @@ struct TM_Options
     float tonemappingRatio = 0.3f;
 
     // </tonemapping>
+
+
+    /// Quite basic CRT emulation.
+    /// Basically work in progress.
+    bool crtEmulation = false;
 }
 
 
@@ -665,7 +670,8 @@ nothrow:
          || _options.tonemappingRatio
              != options.tonemappingRatio
          || _options.noiseTexture != options.noiseTexture
-         || _options.noiseAmount != options.noiseAmount)
+         || _options.noiseAmount != options.noiseAmount
+         || _options.crtEmulation != options.crtEmulation)
         {
             _dirtyPost = true;
             _dirtyOut = true;
@@ -2091,6 +2097,79 @@ private:
                 // pixels at once instead.
                 __m128i post = _mm_loadu_si32(&postS[x]);
 
+                // Simulates 4:2:0 and some spatial coloration
+                if (_options.crtEmulation)
+                {
+                    // PERF: this is absurdly slow
+                    int x_2 = (x/2)*2;
+                    int y_2 = (y/2)*2;
+                    int x_2p1 = (x_2+1);
+                    int y_2p1 = (y_2+1);
+                    if (x_2p1 >= _postWidth) x_2p1 = _postWidth-1;
+                    if (y_2p1 >= _postHeight) y_2p1 = _postHeight-1;
+
+                    // Find 4 pixels
+                    // A B
+                    // C D
+                    // and compute its chroma.
+
+                    // PERF: super expensive!
+
+                    rgba_t P = _post[_postWidth * y + x];
+
+                    rgba_t A = _post[_postWidth * y_2   + x_2];
+                    rgba_t B = _post[_postWidth * y_2   + x_2p1];
+                    rgba_t C = _post[_postWidth * y_2p1 + x_2];
+                    rgba_t D = _post[_postWidth * y_2p1 + x_2p1];
+
+                    YCbCrA_t A_YCbCr = RGBToBT601(A);
+                    YCbCrA_t B_YCbCr = RGBToBT601(B);
+                    YCbCrA_t C_YCbCr = RGBToBT601(C);
+                    YCbCrA_t D_YCbCr = RGBToBT601(D);
+                    YCbCrA_t P_YCbCr = RGBToBT601(P);
+                    // chroma is subsampled 4:2:0
+                    P_YCbCr.Cb = (A_YCbCr.Cb + C_YCbCr.Cb 
+                                + B_YCbCr.Cb + D_YCbCr.Cb + 2) / 4;
+                    P_YCbCr.Cr = (A_YCbCr.Cr + C_YCbCr.Cr 
+                                 + B_YCbCr.Cr + D_YCbCr.Cr + 2) / 4;
+
+                    // Quantize chroma, and randomize its last bits
+                    int Cb_noise = (x/_outScaleX) & 0xff;
+                    int Cr_noise = ((x+128)/_outScaleX) & 0xff;
+                    P_YCbCr.Cb = P_YCbCr.Cb & 0xf8 + (NOISE_16x16[Cb_noise] >> 5);
+                    P_YCbCr.Cr = P_YCbCr.Cr & 0xf8 + (NOISE_16x16[Cr_noise] >> 5);
+
+
+                    rgba_t subsampledPost = BT601ToRGB(P_YCbCr);
+
+                    ubyte offset = (y % 3) != 0 ? 8 : 0;
+                    switch((x) % 3)
+                    {
+                        case 0: 
+                            if (subsampledPost.r+offset > 255)
+                                subsampledPost.r = 255;
+                            else
+                                subsampledPost.r += offset;
+                            break;
+                        case 1:
+                             if (subsampledPost.g +offset > 255)
+                                subsampledPost.g = 255;
+                            else
+                                subsampledPost.g += offset;
+                            break;
+                        case 2:
+                        if (subsampledPost.b+offset > 255)
+                                subsampledPost.b = 255;
+                            else
+                                subsampledPost.b += offset;
+                            break;
+                        default: break;
+                    }
+
+                    post = _mm_loadu_si32(&subsampledPost);
+                    
+                }
+
                 __m128i zero;
                 zero = 0;
                 post = _mm_unpacklo_epi8(post, zero);
@@ -2155,6 +2234,41 @@ struct rgba16_t
 struct rgba32f_t
 {
     float r, g, b, a;
+}
+
+struct YCbCrA_t
+{
+    ubyte Y, Cb, Cr, a;    
+}
+
+
+YCbCrA_t RGBToBT601(rgba_t c)
+{
+    float Y  =  16 + (65.481/255)*c.r + (128.553/255)*c.g + (24.996/255)*c.b;
+    float Cb = 128 - (37.797/255)*c.r -  (74.203/255)*c.g + (112.0/255)*c.b;
+    float Cr = 128 +  (112.0/255)*c.r -  (93.786/255)*c.g - (18.214/255)*c.b;
+    YCbCrA_t r;
+    r.Y  = clamp16_235(cast(int)Y); // not sure if rounding offset needed here
+    r.Cb = clamp16_240(cast(int)Cb);
+    r.Cr = clamp16_240(cast(int)Cr);
+    r.a = c.a;
+    return r;
+}
+
+rgba_t BT601ToRGB(YCbCrA_t c)
+{
+    int Y = c.Y - 16;
+    int Cr = c.Cr - 128;
+    int Cb = c.Cb - 128;
+    float R  = (255.0f / 219) * Y                                        + (255.0f/224)*1.402* Cr;
+    float G  = (255.0f / 219) * Y - (255.0f/224)*1.772*(0.114/0.587)* Cb - (255.0f/224)*1.402*(0.299/0.587)* Cr;
+    float B  = (255.0f / 219) * Y + (255.0f/224)*1.772              * Cb;
+    rgba_t col;
+    col.r = clamp0_255(cast(int)R);
+    col.g = clamp0_255(cast(int)G); // not sure if rounding offset needed here
+    col.b = clamp0_255(cast(int)B);
+    col.a = c.a;
+    return col;
 }
 
 // 16x16 patch of 8-bit blue noise, tileable.
@@ -4321,6 +4435,20 @@ int abs_int32(int x) pure
 float TM_max32f(float a, float b) pure
 {
     return a < b ? a : b;
+}
+
+ubyte clamp16_235(int x) pure
+{
+    if (x < 16) x = 16;
+    if (x > 235) x = 235;
+    return cast(ubyte)x;
+}
+
+ubyte clamp16_240(int x) pure
+{
+    if (x < 16) x = 16;
+    if (x > 240) x = 240;
+    return cast(ubyte)x;
 }
 
 ubyte clamp0_255(int x) pure

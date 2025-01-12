@@ -32,16 +32,22 @@ class TermExample : TurtleGame
     override void update(double dt)
     {
         console.update(dt);
-        if (keyboard.isDown("escape")) exitGame();
+        if (keyboard.isDownOnce("escape")) exitGame();
+        if (keyboard.isDownOnce("space")) crt = !crt;
     }
 
     int ntimes;
+    bool crt = false;
     override void draw()
     {
         ImageRef!RGBA fb = framebuffer();
 
         console.palette(TM_paletteCampbell);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
+
+        TM_Options opt;
+        opt.crtEmulation = crt;
+        console.options(opt);
 
         with (console)
         {
@@ -79,6 +85,9 @@ class TermExample : TurtleGame
 
             style(TM_styleShiny | TM_styleBlink);
             println(" and blinking");
+
+            style(TM_styleNone);
+            cprintln("<lblue><on_red>Press SPACE to enable CRT simulation</></>");
 
             style(TM_styleUnder);
              fg(TM_colorLGreen);

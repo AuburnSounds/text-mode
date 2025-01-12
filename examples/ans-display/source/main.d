@@ -56,6 +56,11 @@ class TermExample : TurtleGame
             curpal = cast(TM_Palette)((curpal + 1) % numPal);
             loadANS();
         }
+        if (keyboard.isDownOnce("space"))
+        {
+            crt = !crt;
+            loadANS();
+        }
 
         // Set background to first color to have a complete color palette
         ubyte r, g, b, a;
@@ -80,6 +85,7 @@ class TermExample : TurtleGame
     const(char)[] ansBytes;
     bool isCP437, isXP;
     TM_Palette curpal;
+    bool crt = true;
 
     void loadANS()
     {
@@ -99,6 +105,10 @@ class TermExample : TurtleGame
 
         console.palette(curpal);
         console.outbuf(fb.pixels, fb.w, fb.h, fb.pitch);
+
+        TM_Options opt;
+        opt.crtEmulation = crt;
+        console.options(opt);
 
         with (console)
         {
