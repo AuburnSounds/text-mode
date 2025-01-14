@@ -676,6 +676,14 @@ nothrow:
             _dirtyPost = true;
             _dirtyOut = true;
         }
+        if (_options.crtEmulation != options.crtEmulation)
+        {
+            //not sure if that one needed
+            _dirtyPost = true;
+
+            _dirtyFinal = true;
+            _dirtyOut = true;
+        }
         if (blurChanged)
             invalidateBlur(true);
 
@@ -1300,6 +1308,10 @@ private:
     // a buffer that composites _post and _blur
     rgba_t[] _final  = null;
 
+    // A buffer that contains _post but converted in YCbCr
+    // (such as with BT.601 for example).
+    YCbCrA_t[] _yuv;
+
     // Blur is invalidated by filling it with black,
     // to avoid too much recompute.
     bool _blurIsCompletelyBlack = false;
@@ -1568,8 +1580,12 @@ private:
     {
         ubyte* pold = p;
         size_t n = width * height;
+
+        // YUV buffer has 2 more lines for sampling 2x2
+        size_t n2 = width * (height + 2); 
         _post  = (cast(rgba_t*   )p)[0..n]; p += n * 4;
         _final = (cast(rgba_t*   )p)[0..n]; p += n * 4;
+        _yuv   = (cast(YCbCrA_t* )p)[0..n2]; p += n2 * 4;
         _emit  = (cast(rgba16_t* )p)[0..n]; p += n * 8;
         _emitH = (cast(rgba16_t* )p)[0..n]; p += n * 8;
         _blur  = (cast(rgba32f_t*)p)[0..n]; p += n * 16;
@@ -1698,11 +1714,13 @@ private:
                 // 1. A char changed its non-blur display,
                 //    or the blur shape has changed,
                 //    and the character is shiny.
-                bool doBlur = (redraw || _dirtyBlur 
-                              || _blurIsCompletelyBlack) && shiny;
-                // 2. A char lost its shininess, and the 
+                bool doBlur = (redraw || _dirtyBlur
+                        || _blurIsCompletelyBlack) && shiny;
+                // 2. A char lost its shininess, and the
                 //    blur buffer isn't all black.
-                if (!shiny && cShiny && !_blurIsCompletelyBlack)
+                if (!shiny
+                    && cShiny
+                    && !_blurIsCompletelyBlack)
                     doBlur = true;
 
                 if (doBlur)
@@ -2078,14 +2096,51 @@ private:
         r = rectGrow(r, _filterWidth / 2);
         r = rectIntersection(r, whole);
 
+        // Compute YCbCr buffer for CRT emulation
+        // else computing 4:2:0 is too expensive
+        if (_options.crtEmulation)
+        {
+            assert(_yuv.length == (_outH+2) * _outW);
+            for (int y = r.top; y < r.bottom; ++y)
+            {
+                const(rgba_t)*    postS;
+                YCbCrA_t*         yuvS;
+                postS = &_post[_postWidth * y];
+                yuvS  = &_yuv[_postWidth * y];
+
+                for (int x = r.left; x < r.right; ++x)
+                {
+                    // PERF: speed-up that loop
+                    rgba_t col = postS[x];
+                    YCbCrA_t inYUV = RGBToBT601(col);
+                    yuvS[x] = inYUV;
+                }
+            }
+
+            YCbCrA_t[] yuv = _yuv;
+
+            // if last line is touched, replicate on last
+            // two lines of _yuv buffer (only first pixel
+            // of last lines need to be replicated though)
+            if (r.bottom >= _postHeight)
+            {
+                int w = _postWidth;
+                int h = _postHeight;
+                yuv[w*h .. w*(h+1)] = yuv[w*(h-1) .. w*h];
+                yuv[w*(h+1)] = yuv[w*h];
+            }
+        }
+
+        const(YCbCrA_t)* pYUV = _yuv.ptr;
+
         for (int y = r.top; y < r.bottom; ++y)
         {
             const(rgba_t)*    postS;
             const(rgba32f_t)* blurS;
             rgba_t*           finalScan;
 
-            postS = &_post[_postWidth * y];
-            blurS = &_blur[_postWidth * y];
+            postS     = &_post[_postWidth * y];
+            blurS     = &_blur[_postWidth * y];
             finalScan = &_final[_postWidth * y];
 
             for (int x = r.left; x < r.right; ++x)
@@ -2097,77 +2152,83 @@ private:
                 // pixels at once instead.
                 __m128i post = _mm_loadu_si32(&postS[x]);
 
-                // Simulates 4:2:0 and some spatial coloration
+                // PERF: downsampling could be done in _yuv
+                // buffer instead.
+                // 3 effects here:
+                // - chroma downsampling
+                // - chroma quantization
+                // - chroma noise
                 if (_options.crtEmulation)
                 {
-                    // PERF: this is absurdly slow
-                    int x_2 = (x/2)*2;
-                    int y_2 = (y/2)*2;
-                    int x_2p1 = (x_2+1);
-                    int y_2p1 = (y_2+1);
-                    if (x_2p1 >= _postWidth) x_2p1 = _postWidth-1;
-                    if (y_2p1 >= _postHeight) y_2p1 = _postHeight-1;
-
-                    // Find 4 pixels
-                    // A B
+                    // Find 4 pixels in the 2x2 patch,
+                    // and the one we are in too `P`.
+                    // _yuv is extended for that being
+                    // possible, but top-right pixel is from
+                    // next-line.
+                    //
+                    // A B   one of them being P
                     // C D
-                    // and compute its chroma.
+                    //
+                    int x_2 = x & ~1;
+                    int y_2 = y & ~1;
+                    int W = _postWidth;
+                    int i0 = W * y_2   + x_2;
+                    int scaleX = _outScaleX;
+                    YCbCrA_t P_YCbCr = pYUV[W * y + x];
 
-                    // PERF: super expensive!
+                    // PERF: merge reads there
+                    YCbCrA_t A = pYUV[i0];
+                    YCbCrA_t B = pYUV[i0 + 1];
+                    YCbCrA_t C = pYUV[i0 + W];
+                    YCbCrA_t D = pYUV[i0 + W + 1];
 
-                    rgba_t P = _post[_postWidth * y + x];
-
-                    rgba_t A = _post[_postWidth * y_2   + x_2];
-                    rgba_t B = _post[_postWidth * y_2   + x_2p1];
-                    rgba_t C = _post[_postWidth * y_2p1 + x_2];
-                    rgba_t D = _post[_postWidth * y_2p1 + x_2p1];
-
-                    YCbCrA_t A_YCbCr = RGBToBT601(A);
-                    YCbCrA_t B_YCbCr = RGBToBT601(B);
-                    YCbCrA_t C_YCbCr = RGBToBT601(C);
-                    YCbCrA_t D_YCbCr = RGBToBT601(D);
-                    YCbCrA_t P_YCbCr = RGBToBT601(P);
                     // chroma is subsampled 4:2:0
-                    P_YCbCr.Cb = (A_YCbCr.Cb + C_YCbCr.Cb 
-                                + B_YCbCr.Cb + D_YCbCr.Cb + 2) / 4;
-                    P_YCbCr.Cr = (A_YCbCr.Cr + C_YCbCr.Cr 
-                                 + B_YCbCr.Cr + D_YCbCr.Cr + 2) / 4;
+                    // PERF: user _mm_avg intrin
+                    P_YCbCr.Cb = (A.Cb + C.Cb
+                                + B.Cb + D.Cb + 2) / 4;
+                    P_YCbCr.Cr = (A.Cr + C.Cr
+                                + B.Cr + D.Cr + 2) / 4;
 
-                    // Quantize chroma, and randomize its last bits
-                    int Cb_noise = (x/_outScaleX) & 0xff;
-                    int Cr_noise = ((x+128)/_outScaleX) & 0xff;
-                    P_YCbCr.Cb = P_YCbCr.Cb & 0xf8 + (NOISE_16x16[Cb_noise] >> 5);
-                    P_YCbCr.Cr = P_YCbCr.Cr & 0xf8 + (NOISE_16x16[Cr_noise] >> 5);
+                    // Quantize chroma + randomize last bits
+                    int Cb_noise = (x/scaleX)       & 0xff;
+                    int Cr_noise = ((x+128)/scaleX) & 0xff;
 
+                    // FUTURE: could be a noise more CRT-ish
+                    // this one can be pretty obvious
+                    P_YCbCr.Cb = (P_YCbCr.Cb & 0xf8)
+                               | (NOISE_16x16[Cb_noise]>>>5);
+                    P_YCbCr.Cr = (P_YCbCr.Cr & 0xf8)
+                               | (NOISE_16x16[Cr_noise]>>>5);
 
-                    rgba_t subsampledPost = BT601ToRGB(P_YCbCr);
+                    rgba_t subsmp = BT601ToRGB(P_YCbCr);
 
+                    // Blend additional RGB matrix to
+                    // simulate a screen.
+                    // PERF: grossly unoptimized
                     ubyte offset = (y % 3) != 0 ? 8 : 0;
                     switch((x) % 3)
                     {
-                        case 0: 
-                            if (subsampledPost.r+offset > 255)
-                                subsampledPost.r = 255;
+                        case 0:
+                            if (subsmp.r+offset>255)
+                                subsmp.r = 255;
                             else
-                                subsampledPost.r += offset;
+                                subsmp.r += offset;
                             break;
                         case 1:
-                             if (subsampledPost.g +offset > 255)
-                                subsampledPost.g = 255;
+                            if (subsmp.g +offset > 255)
+                                subsmp.g = 255;
                             else
-                                subsampledPost.g += offset;
+                                subsmp.g += offset;
                             break;
                         case 2:
-                        if (subsampledPost.b+offset > 255)
-                                subsampledPost.b = 255;
+                            if (subsmp.b+offset > 255)
+                                subsmp.b = 255;
                             else
-                                subsampledPost.b += offset;
+                                subsmp.b += offset;
                             break;
                         default: break;
                     }
-
-                    post = _mm_loadu_si32(&subsampledPost);
-                    
+                    post = _mm_loadu_si32(&subsmp);
                 }
 
                 __m128i zero;
@@ -2225,21 +2286,25 @@ struct rgba_t
 {
     ubyte r, g, b, a;
 }
+static assert(rgba_t.sizeof == 4);
 
 struct rgba16_t
 {
     ushort r, g, b, a;
 }
+static assert(rgba16_t.sizeof == 8);
 
 struct rgba32f_t
 {
     float r, g, b, a;
 }
+static assert(rgba32f_t.sizeof == 16);
 
 struct YCbCrA_t
 {
     ubyte Y, Cb, Cr, a;    
 }
+static assert(YCbCrA_t.sizeof == 4);
 
 
 YCbCrA_t RGBToBT601(rgba_t c)
@@ -4432,9 +4497,14 @@ int abs_int32(int x) pure
     return x >= 0 ? x : -x;
 }
 
-float TM_max32f(float a, float b) pure
+int TM_minint(int a, int b) pure
 {
     return a < b ? a : b;
+}
+
+float TM_max32f(float a, float b) pure
+{
+    return a > b ? a : b;
 }
 
 ubyte clamp16_235(int x) pure
