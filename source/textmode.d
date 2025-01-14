@@ -2142,6 +2142,7 @@ private:
             postS     = &_post[_postWidth * y];
             blurS     = &_blur[_postWidth * y];
             finalScan = &_final[_postWidth * y];
+            bool chromaNoise = ((y / _outScaleY) & 3) != 0;
 
             for (int x = r.left; x < r.right; ++x)
             {
@@ -2174,6 +2175,7 @@ private:
                     int W = _postWidth;
                     int i0 = W * y_2   + x_2;
                     int scaleX = _outScaleX;
+                    int scaleY = _outScaleY;
                     YCbCrA_t P_YCbCr = pYUV[W * y + x];
 
                     // PERF: merge reads there
@@ -2189,16 +2191,19 @@ private:
                     P_YCbCr.Cr = (A.Cr + C.Cr
                                 + B.Cr + D.Cr + 2) / 4;
 
-                    // Quantize chroma + randomize last bits
-                    int Cb_noise = (x/scaleX)       & 0xff;
-                    int Cr_noise = ((x+128)/scaleX) & 0xff;
-
                     // FUTURE: could be a noise more CRT-ish
                     // this one can be pretty obvious
-                    P_YCbCr.Cb = (P_YCbCr.Cb & 0xf8)
-                               | (NOISE_16x16[Cb_noise]>>>5);
-                    P_YCbCr.Cr = (P_YCbCr.Cr & 0xf8)
-                               | (NOISE_16x16[Cr_noise]>>>5);
+                    // this really looks like JPEG
+                    if (chromaNoise)
+                    {
+                        // Quantize chroma + randomize last bits
+                        int Cb_noise = (x/scaleX)       & 0xff;
+                        int Cr_noise = ((x+128)/scaleX) & 0xff;
+                        P_YCbCr.Cb = (P_YCbCr.Cb & 0xf8)
+                                   + (NOISE_16x16[Cb_noise]>>>5);
+                        P_YCbCr.Cr = (P_YCbCr.Cr & 0xf8)
+                                   + (NOISE_16x16[Cr_noise]>>>5);
+                    }
 
                     rgba_t subsmp = BT601ToRGB(P_YCbCr);
 
@@ -2309,13 +2314,14 @@ static assert(YCbCrA_t.sizeof == 4);
 
 YCbCrA_t RGBToBT601(rgba_t c)
 {
-    float Y  =  16 + (65.481/255)*c.r + (128.553/255)*c.g + (24.996/255)*c.b;
-    float Cb = 128 - (37.797/255)*c.r -  (74.203/255)*c.g + (112.0/255)*c.b;
-    float Cr = 128 +  (112.0/255)*c.r -  (93.786/255)*c.g - (18.214/255)*c.b;
+    ubyte Y  = (cast(ushort)( 66 * c.r + 129 * c.g +  25 * c.b + 4096)) >>> 8;
+    ubyte Cb = (cast(ushort)(-38 * c.r -  74 * c.g + 112 * c.b + 32768)) >>> 8;
+    ubyte Cr = (cast(ushort)(127 * c.r - 106 * c.g -  21 * c.b + 32768)) >>> 8;
+
     YCbCrA_t r;
-    r.Y  = clamp16_235(cast(int)Y); // not sure if rounding offset needed here
-    r.Cb = clamp16_240(cast(int)Cb);
-    r.Cr = clamp16_240(cast(int)Cr);
+    r.Y  = Y;
+    r.Cb = Cb;
+    r.Cr = Cr;
     r.a = c.a;
     return r;
 }
@@ -2326,7 +2332,7 @@ rgba_t BT601ToRGB(YCbCrA_t c)
     int Cr = c.Cr - 128;
     int Cb = c.Cb - 128;
     float R  = (255.0f / 219) * Y                                        + (255.0f/224)*1.402* Cr;
-    float G  = (255.0f / 219) * Y - (255.0f/224)*1.772*(0.114/0.587)* Cb - (255.0f/224)*1.402*(0.299/0.587)* Cr;
+    float G  = (255.0f / 219) * Y - (255.0f/224)*1.772*(0.114/0.587)* Cb - (255.0f/224)*1.402*(0.299f/0.587)* Cr;
     float B  = (255.0f / 219) * Y + (255.0f/224)*1.772              * Cb;
     rgba_t col;
     col.r = clamp0_255(cast(int)R);
@@ -4507,14 +4513,14 @@ float TM_max32f(float a, float b) pure
     return a > b ? a : b;
 }
 
-ubyte clamp16_235(int x) pure
+ubyte clamp16_235(ubyte x) pure
 {
     if (x < 16) x = 16;
     if (x > 235) x = 235;
     return cast(ubyte)x;
 }
 
-ubyte clamp16_240(int x) pure
+ubyte clamp16_240(ubyte x) pure
 {
     if (x < 16) x = 16;
     if (x > 240) x = 240;
