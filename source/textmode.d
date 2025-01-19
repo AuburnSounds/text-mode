@@ -7,7 +7,7 @@ import core.stdc.stdlib: realloc, free;
 import core.stdc.string: memset;
 
 import std.utf: byDchar;
-import std.math: abs, exp, sqrt;
+import std.math: sqrt, abs, exp, sqrt;
 
 import inteli.smmintrin;
 import rectlist;
@@ -287,47 +287,81 @@ struct TM_Options
 
     // <blur>
 
-    /// Quantity of blur added by TM_shiny / <shiny>
-    /// (1.0f means default).
-    float blurAmount       = 1.0f;
+        /// Quantity of blur added by TM_shiny / <shiny>
+        /// (1.0f means default).
+        float blurAmount       = 1.0f;
 
-    /// Kernel size in multiple of default value.
-    /// This changes the blur filter width.
-    float blurScale        = 1.0f;
+        /// Kernel size in multiple of default value.
+        /// This changes the blur filter width.
+        float blurScale        = 1.0f;
 
-    /// Whether foreground color contributes to blur.
-    bool blurForeground    = true;
+        /// Whether foreground color contributes to blur.
+        bool blurForeground    = true;
 
-    /// Whether background color contributes to blur.
-    /// Note that this usually gives surprising results
-    /// together with non-black background. Only really
-    /// works if everything is shiny.
-    bool blurBackground    = false;
+        /// Whether background color contributes to blur.
+        /// Note that this usually gives surprising results
+        /// together with non-black background. Only really
+        /// works if everything is shiny.
+        bool blurBackground    = false;
 
-    /// Luminance blue noise, applied to blur effect.
-    bool noiseTexture      = true;
+        /// Luminance blue noise, applied to blur effect.
+        bool noiseTexture      = true;
 
-    /// Quantity of that texture (1.0f means default).
-    float noiseAmount      = 1.0f;
+        /// Quantity of that texture (1.0f means default).
+        float noiseAmount      = 1.0f;
 
     // </blur>
 
 
     // <tonemapping>
 
-    /// Enable or disable tonemapping.
-    bool tonemapping       = false;
+        /// Enable or disable tonemapping.
+        bool tonemapping       = false;
 
-    /// Channels that exceed 1.0f, bleed that much in other
-    /// channels.
-    float tonemappingRatio = 0.3f;
+        /// Channels that exceed 1.0f, bleed that much in
+        /// other channels.
+        float tonemappingRatio = 0.3f;
 
     // </tonemapping>
 
 
-    /// Quite basic CRT emulation.
-    /// Basically work in progress.
-    bool crtEmulation = false;
+    // <CRT emulation>
+
+        /// Quite basic CRT emulation.
+        /// Basically work in progress.
+        bool crtEmulation = false;
+
+    // </CRT emulation>
+
+
+    // <vignetting>
+
+        /// Is vignetting enabled?
+        bool vignetting = false;
+
+        /// Location in output buffer.
+        /// 0 is left, 1 is right.
+        /// Default = center.
+        float vignettingCenterX = 0.5f;
+
+        /// Location in output buffer (0 to 1).
+        /// 0 is top, 1 is bottom.
+        /// Default = center.
+        float vignettingCenterY = 0.5f;
+
+        /// How far does it take to be completely
+        /// of `vignettingColor`.
+        /// Default = Twice a half-diagonal of the
+        /// output buffer size.
+        float vignettingDistance = 1.0f;
+
+        /// Vignetting opacity, from 0.0 to 1.0
+        float vignettingOpacity = 0.3f;
+
+        /// sRGB 8-bit, vignetting color
+        ubyte[4] vignettingColor = [0, 0, 32, 255];
+
+    // </vignetting>
 }
 
 
@@ -650,7 +684,7 @@ nothrow:
         if (_options.blendMode != options.blendMode)
             _dirtyOut = true;
 
-        bool blurChanged = 
+        bool blurChanged =
                _options.borderShiny != options.borderShiny
             || _options.blurAmount != options.blurAmount
             || _options.blurScale != options.blurScale
@@ -684,6 +718,23 @@ nothrow:
             _dirtyFinal = true;
             _dirtyOut = true;
         }
+
+        if (_options.vignetting != options.vignetting
+         || _options.vignettingCenterX
+            != options.vignettingCenterX
+         || _options.vignettingCenterY
+            != options.vignettingCenterY
+         || _options.vignettingDistance
+            != options.vignettingDistance
+         || _options.vignettingOpacity
+            != options.vignettingOpacity
+         || _options.vignettingColor
+            != options.vignettingColor)
+        {
+            _dirtyFinal = true;
+            _dirtyOut = true;
+        }
+
         if (blurChanged)
             invalidateBlur(true);
 
@@ -2083,6 +2134,9 @@ private:
 
     void applyEffects(rect_t r) @trusted
     {
+        int W = _postWidth;
+        int H = _postHeight;
+
         rect_t whole = rectWithCoords(0, 0, _outW, _outH);
         if (_dirtyFinal)
         {
@@ -2124,12 +2178,22 @@ private:
             // of last lines need to be replicated though)
             if (r.bottom >= _postHeight)
             {
-                int w = _postWidth;
-                int h = _postHeight;
-                yuv[w*h .. w*(h+1)] = yuv[w*(h-1) .. w*h];
-                yuv[w*(h+1)] = yuv[w*h];
+                yuv[W*H .. W*(H+1)] = yuv[W*(H-1) .. W*H];
+                yuv[W*(H+1)] = yuv[W*H];
             }
         }
+
+        float vCx = _options.vignettingCenterX * (W-1);
+        float vCy = _options.vignettingCenterY * (W-1);
+        float outBufDiagonal = sqrt( cast(float)(W*W)+(H*H) );
+        float maxDistVignetting = _options.vignettingDistance *
+                                  outBufDiagonal / 2;
+
+        // vignetting color in 4xfloat form
+        __m128 vigColor = _mm_setr_ps(_options.vignettingColor[0],
+                                      _options.vignettingColor[1],
+                                      _options.vignettingColor[2],
+                                      _options.vignettingColor[3]);
 
         const(YCbCrA_t)* pYUV = _yuv.ptr;
 
@@ -2172,7 +2236,6 @@ private:
                     //
                     int x_2 = x & ~1;
                     int y_2 = y & ~1;
-                    int W = _postWidth;
                     int i0 = W * y_2   + x_2;
                     int scaleX = _outScaleX;
                     int scaleY = _outScaleY;
@@ -2247,6 +2310,19 @@ private:
 
                 // Add blur
                 __m128 RGB = postF + blur * blurAmt;
+
+                if (_options.vignetting)
+                {
+                    float dist2 = (vCx-x)*(vCx-x)+(vCy-y)*(vCy-y);
+                    float amt = sqrt(dist2) / maxDistVignetting;
+                    assert(amt >= 0);
+                    if (amt > 1)
+                        amt = 1;
+                    amt *= _options.vignettingOpacity;
+
+                    // Note: clamped by subsequent code
+                    RGB = RGB + (vigColor - RGB) * amt;
+                }
 
                 if (_options.tonemapping)
                 {
@@ -2328,6 +2404,7 @@ YCbCrA_t RGBToBT601(rgba_t c)
 
 rgba_t BT601ToRGB(YCbCrA_t c)
 {
+    // PERF: this is bad
     int Y = c.Y - 16;
     int Cr = c.Cr - 128;
     int Cb = c.Cb - 128;
