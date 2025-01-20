@@ -1437,7 +1437,7 @@ private:
     }
 
     // safe drawing, help function
-    void drawChar(int col, int row, dchar ch) pure
+    void drawChar(int col, int row, dchar ch) pure @trusted
     {
         if ( ! validPosition(col, row) )
             return;
@@ -4208,11 +4208,11 @@ pure:
                 style(curStyle | TM_styleBlink); break;
             case 4: style(curStyle | TM_styleUnder);
                 break;
-            case 21: style(curStyle & ~TM_styleBold);
+            case 21: style(curStyle & ~cast(int)TM_styleBold);
                 break;
-            case 24: style(curStyle & ~TM_styleUnder);
+            case 24: style(curStyle & ~cast(int)TM_styleUnder);
                 break;
-            case 25: style(curStyle & ~TM_styleBlink);
+            case 25: style(curStyle & ~cast(int)TM_styleBlink);
                 break;
             case 30: .. case 37:   fg(n - 30); break;
             case 40: .. case 47:   bg(n - 40); break;
