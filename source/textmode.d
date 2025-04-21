@@ -205,12 +205,13 @@ enum : TM_Palette
     TM_paletteWindows10,    ///
     TM_paletteVScode,       ///
     TM_paletteGruvbox,      ///
+    TM_paletteNyx,          ///
 }
 
 /**
     Number of pre-defined palettes.
 */
-enum TM_PALETTE_NUM = 8;
+enum TM_PALETTE_NUM = 9;
 
 /**
     Selected vintage font.
@@ -2570,7 +2571,14 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
     [ 0x28282800, 0xCC241Dff, 0x98971Aff, 0xD79921ff,
       0x458588ff, 0xB16286ff, 0x689D6Aff, 0xA89984ff,
       0x928374ff, 0xFB4934ff, 0xB8BB26ff, 0xFABD2Fff,
-      0x83A598ff, 0xD3869Bff, 0x8EC07Cff, 0xEBDBB2ff ]
+      0x83A598ff, 0xD3869Bff, 0x8EC07Cff, 0xEBDBB2ff ],
+
+    // Nyx, inspired from Hades I Nyx character
+    // https://www.supergiantgames.com/
+    [ 0x0a071800, 0x91114cff, 0x2a2e33ff, 0x5f5240ff,
+      0x231f40ff, 0x7329a2ff, 0xbdbbeeff, 0x9aa2a9ff,
+      0x565b69ff, 0xfd116cff, 0x859480ff, 0xe6cd6bff,
+      0x3a3a85ff, 0x9d2be9ff, 0x60c6f1ff, 0xefeef1ff ]
 ];
 
 alias TM_RangeFlags = int;
