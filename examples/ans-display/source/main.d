@@ -73,6 +73,7 @@ class TermExample : TurtleGame
     enum string[] ANSI_IMAGES =
     [
         "resources/xp-format.xp",
+        "resources/auburn-os-logo.xp",
         "resources/TestPattern ANSI.ans",
         "resources/TestPattern 24-bit.ans",
         "resources/Pac-Man (UTF-8).txt",
