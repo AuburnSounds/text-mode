@@ -2263,10 +2263,10 @@ private:
                         // Quantize chroma + randomize last bits
                         int Cb_noise = (x/scaleX)       & 0xff;
                         int Cr_noise = ((x+128)/scaleX) & 0xff;
-                        P_YCbCr.Cb = (P_YCbCr.Cb & 0xf8)
-                                   + (NOISE_16x16[Cb_noise]>>>5);
-                        P_YCbCr.Cr = (P_YCbCr.Cr & 0xf8)
-                                   + (NOISE_16x16[Cr_noise]>>>5);
+                        P_YCbCr.Cb = (P_YCbCr.Cb & 0xfc)
+                                   + (NOISE_16x16[Cb_noise]>>>6);
+                        P_YCbCr.Cr = (P_YCbCr.Cr & 0xfc)
+                                   + (NOISE_16x16[Cr_noise]>>>6);
                     }
 
                     rgba_t subsmp = BT601ToRGB(P_YCbCr);
@@ -2576,7 +2576,7 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
     // Nyx, inspired from Hades I Nyx character
     // https://www.supergiantgames.com/
     [ 0x0a071800, 0x91114cff, 0x2a2e33ff, 0x5f5240ff,
-      0x231f40ff, 0x7329a2ff, 0xbdbbeeff, 0x9aa2a9ff,
+      0x23263eff, 0x7329a2ff, 0xbdbbeeff, 0x9aa2a9ff,
       0x565b69ff, 0xfd116cff, 0x859480ff, 0xe6cd6bff,
       0x3a3a85ff, 0x9d2be9ff, 0x60c6f1ff, 0xefeef1ff ]
 ];
