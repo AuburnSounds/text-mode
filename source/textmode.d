@@ -994,11 +994,11 @@ nothrow:
         is gzipped.
 
         Params:
-             xpBytes The .xp file contents.
-             layerMask What layers to draw, -1 means all.
-                       Bit 0 for layer 1
-                       etc...
-                       Bit 8 for layer 9.
+             xpBytes   = The .xp file contents.
+             layerMask = What layers to draw, -1 means all.
+                         Bit 0 for layer 1
+                         etc...
+                         Bit 8 for layer 9.
     */
     void printXP(const(void)[] xpBytes, int layerMask = -1)
         @trusted
@@ -1081,7 +1081,10 @@ nothrow:
         quadruplets.
 
         Params:
-             pixels    Start of output buffer.
+             pixels     = Start of output buffer.
+             width      = Width of output buffer.
+             height     = Height of output buffer.
+             pitchBytes = Offset between output scanlines.
     */
     void outbuf(void*     pixels,
                 int       width,
