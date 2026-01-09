@@ -2,7 +2,7 @@
 
 The goal of the `text-mode` DUB package is to be a virtual text-mode, like in older DOS machines, except with Unicode support instead of a single 8-bit code page. There is however a 16 color palette like in ancient text modes.
 
-A secundary goal is to be efficient (everything is cached) and provide vintage looks.
+A secondary goal is to be efficient (everything is cached) and provide vintage looks.
 
 
 ## 0. Basic example

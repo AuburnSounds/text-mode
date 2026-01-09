@@ -99,7 +99,7 @@ bool rectContainsRect(const(rect_t) r, const(rect_t) o) {
     assert(rectIsSorted(r));
     assert(rectIsSorted(o));
     if ( (o.left < r.left) || (o.right > r.right) ) return false;
-    if ( (o.left < r.left) || (o.right > r.right) ) return false;
+    if ( (o.top < r.top) || (o.bottom > r.bottom) ) return false;
     return true;
 }
 

@@ -510,7 +510,7 @@ nothrow:
     void restore() pure
     {
         // stack underflow is ignored.
-        if (_stateCount >= 0)
+        if (_stateCount > 0)
             _stateCount -= 1;
     }
 
@@ -2188,7 +2188,7 @@ private:
         }
 
         float vCx = _options.vignettingCenterX * (W-1);
-        float vCy = _options.vignettingCenterY * (W-1);
+        float vCy = _options.vignettingCenterY * (H-1);
         float outBufDiagonal = sqrt( cast(float)(W*W)+(H*H) );
         float maxDistVignetting = _options.vignettingDistance *
                                   outBufDiagonal / 2;
@@ -3873,8 +3873,8 @@ private:
                     return r;
                 }
                 else if ((ch >= 'a' && ch <= 'z')
-                      || (ch >= 'a' && ch <= 'z'))
-                    // TODO suspicious if
+                      || (ch >= 'A' && ch <= 'Z'))
+                    // Accept both lowercase and uppercase
                 {
                     next;
                 }
