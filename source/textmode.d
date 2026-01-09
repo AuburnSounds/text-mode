@@ -2359,6 +2359,66 @@ private:
 }
 
 
+/**
+    An image composed of TM_CharData cells with a specific width and height.
+    This is an intermediate format for decoded .xp buffers.
+*/
+static struct TM_Image
+{
+nothrow:
+@nogc:
+@safe:
+
+    /// Width of the image in characters.
+    int width = 0;
+
+    /// Height of the image in characters.
+    int height = 0;
+
+    /// The character data array (width * height elements).
+    TM_CharData[] data = null;
+
+    /**
+        Get a reference to the character at the specified column and row.
+        Params:
+            col = Column index (0-based)
+            row = Row index (0-based)
+        Returns:
+            Reference to the TM_CharData at the specified position.
+    */
+    ref TM_CharData charAt(int col, int row) pure return
+    {
+        return data[row * width + col];
+    }
+
+    /**
+        Resize the buffer if the new size is larger than the current size.
+        Params:
+            newWidth = New width in characters
+            newHeight = New height in characters
+    */
+    void resize(int newWidth, int newHeight) @trusted
+    {
+        int newSize = newWidth * newHeight;
+        int currentSize = width * height;
+        
+        if (newSize > currentSize)
+        {
+            size_t bytes = newSize * TM_CharData.sizeof;
+            void* alloc = realloc_c17(data.ptr, bytes);
+            data = (cast(TM_CharData*)alloc)[0..newSize];
+            width = newWidth;
+            height = newHeight;
+        }
+    }
+
+    ~this() @trusted
+    {
+        free(data.ptr);
+    }
+}
+
+
 // *********************************************************
 // *********************** PRIVATE *************************
 // *********************************************************
