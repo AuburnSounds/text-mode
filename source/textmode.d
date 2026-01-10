@@ -3,7 +3,7 @@ module textmode;
 nothrow @nogc @safe:
 
 import core.memory;
-import core.stdc.stdlib: realloc, free;
+import core.stdc.stdlib: malloc, realloc, free;
 import core.stdc.string: memset;
 
 import std.utf: byDchar;
@@ -1003,26 +1003,37 @@ nothrow:
     void printXP(const(void)[] xpBytes, int layerMask = -1)
         @trusted
     {
-        // On heap since 8kb in size
+        // Compute hash of xpBytes and current palette
+        uint hash = hashPalettePlusXP(xpBytes);
+
+        // Do we have that in cache?
+        TM_Image* image;
+
+        if (getOrCreateImage(hash, image))
+        {
+            // cache hit, displayed decoded image
+            printImage(*image, layerMask);
+            return;
+        }
+        assert(image !is null);
+
+        // On heap since 8kb in size, lazy init
         if (!_infl_decompressor)
             _infl_decompressor = tinfl_decompressor_alloc();
         tinfl_init(_infl_decompressor);
-
-        TM_Image image;
 
         // Make TM_Image from compressed .xp
         XPInterpreter interp;
         interp.initialize(&this);
         bool success = interp.interpret(cast(const(ubyte)[]) xpBytes,
                                         &_scratch,
-                                        _infl_decompressor, image);
+                                        _infl_decompressor, *image);
         if (!success)
-            return;
+        {
+            return; // BUG: cache item is created anyway... which will not work later on
+        }
 
-        // PERF: store that image, it's invalidated when palette 
-        // change, need to hash palette + xpBytes
-        printImage(image, layerMask);
-
+        printImage(*image, layerMask);
     }
 
     /**
@@ -1344,6 +1355,15 @@ nothrow:
         free(_charDirty.ptr);
         tinfl_decompressor_free(_infl_decompressor);
         sb_free(_scratch);
+
+        // clear cached .xp image
+        int cached = sb_count(_xpCache);
+        for (int c = 0; c < cached; ++c)
+        {
+            _xpCache[c].cachedImage.release();
+            free(_xpCache[c].cachedImage);
+        }
+        sb_free(_xpCache);
     }
 
 private:
@@ -2407,6 +2427,53 @@ private:
             }
         }
     }
+
+    uint hashPalettePlusXP(const(void)[] xpBytes)
+    {
+        // hash _palette, since the decoded XP is only 
+        // valid for a particular palette.
+        uint hash = hashFNV1A32(xpBytes);
+        hash = hashFNV1A32(_palette, hash);
+        return hash;
+    }
+
+    static struct XPCacheItem
+    {
+        uint hash;
+        TM_Image* cachedImage; // itself allocated on heap
+    }        
+
+    XPCacheItem* _xpCache;
+
+    // return true if was in cache, false if just created
+    // it's a stupid linear cache since we don't have yet 
+    // a usecase with many .xp, and in a B-tree the item count 
+    // would be likely > 30 in a single node, so...
+    bool getOrCreateImage(uint hash, out TM_Image* result)
+        @trusted
+    {
+        int cached = sb_count(_xpCache);
+        for (int c = 0; c < cached; ++c)
+        {
+            if (hash == _xpCache[c].hash)
+            {
+                result = _xpCache[c].cachedImage;
+                return true; // hit
+            }
+        }
+        // create a new TM_Image storage
+        // fortunately it needs no ctor
+
+        XPCacheItem item;
+        item.hash = hash;
+        item.cachedImage = cast(TM_Image*) malloc(TM_Image.sizeof);
+        *(item.cachedImage) = TM_Image.init;
+
+        sb_push!XPCacheItem(_xpCache, item);
+
+        result = _xpCache[cached].cachedImage; // borrow
+        return false;
+    }
 }
 
 
@@ -2433,6 +2500,8 @@ nothrow:
     /// The character data array (width * height * layers elements).
     /// If a layer is null, no data there.
     TM_CharData[] data;
+
+    @disable this(this); // create issues in containers
 
     ref inout(TM_CharData) charAt(int layer, int col, int row) pure inout return
     {
@@ -2462,9 +2531,15 @@ nothrow:
         }
     }
 
-    ~this() @trusted
+    void release() @trusted
     {
         free(data.ptr);
+        data = null;
+    }
+
+    ~this()
+    {
+        release();
     }
 }
 
@@ -4769,4 +4844,19 @@ bool equalCharData(TM_CharData a, TM_CharData b) pure
     return a.glyph == b.glyph
         && a.color == b.color
         && a.style == b.style;
+}
+
+
+// https://gist.github.com/ctmatthews/c1cbd1b2e68c29a88b236475a0b26cd0
+uint hashFNV1A32(const(void)[] data, uint seed = 0x811c9dc5)
+{
+    uint result = seed;
+
+    const(ubyte)[] bytes = cast(const(ubyte)[])data;
+    foreach(ubyte b; bytes)
+    {
+        result ^= b;
+        result *= 0x01000193;
+    }
+    return result;
 }
