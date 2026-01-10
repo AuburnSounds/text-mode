@@ -2,12 +2,11 @@ module textmode;
 
 nothrow @nogc @safe:
 
-import core.memory;
 import core.stdc.stdlib: malloc, realloc, free;
 import core.stdc.string: memset;
+import core.stdc.math: sqrt, exp;
 
 import std.utf: byDchar;
-import std.math: sqrt, abs, exp, sqrt;
 
 import inteli.smmintrin;
 import rectlist;
@@ -2467,10 +2466,8 @@ private:
         XPCacheItem item;
         item.hash = hash;
         item.cachedImage = cast(TM_Image*) malloc(TM_Image.sizeof);
-        *(item.cachedImage) = TM_Image.init;
-
+        item.cachedImage.initialize();
         sb_push!XPCacheItem(_xpCache, item);
-
         result = _xpCache[cached].cachedImage; // borrow
         return false;
     }
@@ -2500,6 +2497,17 @@ nothrow:
     /// The character data array (width * height * layers elements).
     /// If a layer is null, no data there.
     TM_CharData[] data;
+
+    // Important, if we assign an uninitialized TM_Image
+    // with TM_Image.init, then it may crash! probably calling dtor (!)
+    // TODO: report upstream
+    void initialize()
+    {
+        width = 0;
+        height = 0;
+        layers = 0;
+        data = null;
+    }
 
     @disable this(this); // create issues in containers
 
@@ -4707,7 +4715,6 @@ nothrow:
                 }
             }
         }
-
         return true;
     }
 
@@ -4751,11 +4758,11 @@ private:
 void makeGaussianKernel(int len,
                         float sigma,
                         float mu,
-                        float[] outtaps) pure
+                        float[] outtaps)
 {
     static double gaussian(double x,
                            double mu,
-                           double sigma) pure
+                           double sigma)
     {
         enum SQRT2 = 1.41421356237;
         return 0.5 * erf((x - mu) / (SQRT2 * sigma));
@@ -4785,7 +4792,7 @@ void makeGaussianKernel(int len,
     }
 }
 
-double erf(double x) pure
+double erf(double x)
 {
     // constants
     double a1 = 0.254829592;
@@ -4795,10 +4802,15 @@ double erf(double x) pure
     double a5 = 1.061405429;
     double p  = 0.3275911;
     // A&S formula 7.1.26
-    double t = 1.0 / (1.0 + p * abs(x));
+    double t = 1.0 / (1.0 + p * abs_double(x));
     double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2)
              * t + a1) * t * exp(-x * x);
     return (x >= 0 ? 1 : -1) * y;
+}
+
+double abs_double(double x) pure
+{
+    return x >= 0 ? x : -x;
 }
 
 int abs_int32(int x) pure
