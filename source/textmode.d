@@ -1029,7 +1029,10 @@ nothrow:
                                         _infl_decompressor, *image);
         if (!success)
         {
-            return; // BUG: cache item is created anyway... which will not work later on
+            assert(image.width == 0 && image.height == 0 && image.layers == 0);
+            // Note: cache item is created anyway, but with zero size.
+            // At draw time, nothing happen, but we don't waste time 
+            // parsing the .xp again, which would again fail.
         }
 
         printImage(*image, layerMask);
@@ -4678,6 +4681,9 @@ nothrow:
             }
             _input = tmp;
         }
+
+        // At this point, parsing cannot crash anymore.
+        // outImage is given a non-zero size, which means "drawable".
 
         outImage.resize(numLayers, maxLayerWidth, maxLayerHeight);
 
