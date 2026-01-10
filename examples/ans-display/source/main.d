@@ -74,6 +74,9 @@ class TermExample : TurtleGame
     [
         "resources/xp-format.xp",
         "resources/auburn-os-logo.xp",
+        "resources/auburn-os-logo-selene.xp",
+        "resources/menu-screen.xp",
+        "resources/menu-screen-selene.xp",
         "resources/TestPattern ANSI.ans",
         "resources/TestPattern 24-bit.ans",
         "resources/Pac-Man (UTF-8).txt",

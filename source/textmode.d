@@ -1008,13 +1008,64 @@ nothrow:
             _infl_decompressor = tinfl_decompressor_alloc();
         tinfl_init(_infl_decompressor);
 
+        TM_Image image;
+
+        // Make TM_Image from compressed .xp
         XPInterpreter interp;
-        interp.initialize(&this, current.ccol,
-                          current.crow);
-        interp.interpret(cast(const(ubyte)[]) xpBytes,
-                         layerMask,
-                         &_scratch,
-                         _infl_decompressor);
+        interp.initialize(&this);
+        bool success = interp.interpret(cast(const(ubyte)[]) xpBytes,
+                                        &_scratch,
+                                        _infl_decompressor, image);
+        if (!success)
+            return;
+
+        // PERF: store that image, it's invalidated when palette 
+        // change, need to hash palette + xpBytes
+        printImage(image, layerMask);
+
+    }
+
+    /**
+        Print a `TM_Image` in the console buffer.
+        At cursor position.
+    */
+    void printImage(ref const(TM_Image) image, int layerMask = -1)
+        @trusted
+    {
+        int x = current.ccol;
+        int y = current.crow;
+
+        int w = image.width;
+        int h = image.height;
+        int layers = image.layers;
+
+        for (int layer = 0; layer < layers; ++layer)
+        {
+            bool drawLayer = (layerMask & (1<<layer)) != 0;
+            if (!drawLayer)
+                continue;
+
+            for (int row = 0; row < h; ++row)
+            {
+                for (int col = 0; col < w; ++col)
+                {
+                    // PERF: can replace by offset
+                    TM_CharData src = image.charAt(layer, col, row);
+
+                    if (src.glyph == dchar.init)
+                        continue; // transparent
+
+                    if ( ! validPosition(x + col, y + row) )
+                        return;
+
+                    TM_CharData* dst = &charAt(x + col, y + row);
+
+                    dst.glyph = src.glyph;
+                    dst.color = src.color;
+                    // Note: attributes left untouched, as in printXP
+                }
+            }
+        }
     }
 
     /**
@@ -2360,10 +2411,11 @@ private:
 
 
 /**
-    An image composed of TM_CharData cells with a specific width and height.
-    This is an intermediate format for decoded .xp buffers.
+    An image composed of TM_CharData cells with a specific 
+    width and height. This is an intermediate format for 
+    decoded .xp buffers.
 */
-static struct TM_Image
+struct TM_Image
 {
 nothrow:
 @nogc:
@@ -2375,40 +2427,38 @@ nothrow:
     /// Height of the image in characters.
     int height = 0;
 
-    /// The character data array (width * height elements).
-    TM_CharData[] data = null;
+    /// Layers in this image, all have same width and height
+    int layers = 0;
 
-    /**
-        Get a reference to the character at the specified column and row.
-        Params:
-            col = Column index (0-based)
-            row = Row index (0-based)
-        Returns:
-            Reference to the TM_CharData at the specified position.
-    */
-    ref TM_CharData charAt(int col, int row) pure return
+    /// The character data array (width * height * layers elements).
+    /// If a layer is null, no data there.
+    TM_CharData[] data;
+
+    ref inout(TM_CharData) charAt(int layer, int col, int row) pure inout return
     {
-        return data[row * width + col];
+        return data[layer * width * height + row * width + col];
     }
 
-    /**
-        Resize the buffer if the new size is larger than the current size.
-        Params:
-            newWidth = New width in characters
-            newHeight = New height in characters
-    */
-    void resize(int newWidth, int newHeight) @trusted
+    void resize(int numLayers, int newWidth, int newHeight) @trusted
     {
-        int newSize = newWidth * newHeight;
-        int currentSize = width * height;
+        // need allocate
+        int newSize     = newWidth * newHeight * numLayers;
+        int currentSize = width    * height    * layers;
         
         if (newSize > currentSize)
         {
             size_t bytes = newSize * TM_CharData.sizeof;
             void* alloc = realloc_c17(data.ptr, bytes);
+
             data = (cast(TM_CharData*)alloc)[0..newSize];
+
+            // fill with non-character (special value for transparent)
+            for (int s = 0; s < newSize; ++s)
+                data[s].glyph = dchar.init;
+
             width = newWidth;
             height = newHeight;
+            layers = numLayers;
         }
     }
 
@@ -4411,35 +4461,35 @@ static immutable ushort[256] CP437_TO_UNICODE =
     0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0,
 ];
 
+// limitation of .xp format
+enum TM_MAX_IMAGE_LAYERS = 9;
+
 struct XPInterpreter
 {
 public:
 nothrow:
 @nogc:
 
-    void initialize(TM_Console* console, int bx, int by)
+    void initialize(TM_Console* console)
     {
         this.console = console;
-        this.baseX   = bx;
-        this.baseY   = by;
     }
 
     // Reference: Appendix B: .xp Format Specification
     //            in REXPaint manual.txt
-    void interpret(const(ubyte)[] input,
-
-                    // which layers to draw
-                   int layerMask,
+    bool interpret(const(ubyte)[] input,
 
                    // *scratch is a stretchy buffer
                    // for amortized ungzip
                    ubyte** scratch,
 
-                   tinfl_decompressor* infl_decomp)
+                   tinfl_decompressor* infl_decomp,
+
+                   ref TM_Image outImage) // output image
         @trusted
     {
         if (input.length < 18)
-            return; // can't be a .gz file
+            return false; // can't be a .gz file
 
         // check Gzip header
         const(ubyte)* bodyPtr;
@@ -4448,11 +4498,11 @@ nothrow:
             int ofs = 0;
             _input = input;
             if (popByte() != 0x1f)
-                return;
+                return false;
             if (popByte() != 0x8b)
-                return;
+                return false;
             if (popByte() != 0x08)
-                return; // not DEFLATE
+                return false; // not DEFLATE
             ubyte flags = popByte();
 
             // REXpaint seems to be 0 here
@@ -4475,11 +4525,10 @@ nothrow:
             read_s32_LE(); // skip CRC
             bodyLen = cast(uint) read_s32_LE();
             if (bodyLen > int.max)
-                return;
+                return false;
         }
 
         // deflate uncompress stuff
-        // PERF: LRU cache for decompressed XP?
         {
             sb_set_capacity(*scratch, cast(int)bodyLen);
 
@@ -4500,7 +4549,7 @@ nothrow:
                                                &outlen,
                                                flags);
             if (st != TINFL_STATUS_DONE)
-                return;
+                return false;
             // MAYDO: use decompressed length
             input = (*scratch)[0..outlen];
         }
@@ -4508,20 +4557,51 @@ nothrow:
         _input = input;
         int ver = read_s32_LE();
         int numLayers = read_s32_LE();
-        if (numLayers < 1 || numLayers > 9)
-            return;
+        if (numLayers < 1 || numLayers > TM_MAX_IMAGE_LAYERS)
+            return false;
+
+        int maxLayerWidth = 0;
+        int maxLayerHeight = 0;
+
+        // Read max width and height of layers
+        // with this first scan
+        {
+            const(ubyte)[] tmp = _input;
+            for (int layer = 0; layer < numLayers; layer++)
+            {
+                int width = read_s32_LE();
+                int height = read_s32_LE();
+                if (maxLayerWidth < width) maxLayerWidth = width;
+                if (maxLayerHeight < height) maxLayerHeight = height;
+
+                for (int x = 0; x < width; ++x)
+                {
+                    for (int y = 0; y < height; ++y)
+                    {
+                        read_s32_LE();
+                        ubyte fgr = popByte();
+                        ubyte fgg = popByte();
+                        ubyte fgb = popByte();
+                        ubyte bgr = popByte();
+                        ubyte bgg = popByte();
+                        ubyte bgb = popByte();
+
+                        // transparent color
+                        if (bgr==255 && bgg==0 && bgb==255)
+                            continue; // glyph already set to 0xffff
+                    }
+                }
+                skipBytes(width * height * 4); // #OVERFLOW
+            }
+            _input = tmp;
+        }
+
+        outImage.resize(numLayers, maxLayerWidth, maxLayerHeight);
 
         for (int layer = 0; layer < numLayers; layer++)
         {
             int width = read_s32_LE();
             int height = read_s32_LE();
-
-            bool drawLayer = (layerMask & (1<<layer)) != 0;
-            if (!drawLayer)
-            {
-                skipBytes(cast(size_t)10 * width * height);
-                continue;
-            }
 
             for (int x = 0; x < width; ++x)
             {
@@ -4539,21 +4619,21 @@ nothrow:
 
                     // transparent color
                     if (bgr==255 && bgg==0 && bgb==255)
-                        continue;
+                        continue; // glyph already set to 0xffff
 
                     // PERF: LRU cache for matching colors
                     int fgM, bgM;
-                    with (console)
-                    {
-                        fgM = findColorMatch(fgr, fgg, fgb);
-                        bgM = findColorMatch(bgr, bgg, bgb);
-                        fg(fgM);
-                        bg(bgM);
-                        drawChar(baseX + x, baseY + y, ch);
-                    }
+                    fgM = console.findColorMatch(fgr, fgg, fgb);
+                    bgM = console.findColorMatch(bgr, bgg, bgb);
+
+                    TM_CharData* p = &outImage.charAt(layer, x, y);
+                    p.color = cast(ubyte)(fgM | (4 << bgM));
+                    p.glyph = ch;
                 }
             }
         }
+
+        return true;
     }
 
     int read_s32_LE()
