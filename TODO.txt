@@ -9,4 +9,3 @@
 - uses rect clipping to avoid early continue in loops
 - faster dchar => glyph lookup
 - faster color-matching with LRU cache
-- decoded `.xp` cache for already-seen input
