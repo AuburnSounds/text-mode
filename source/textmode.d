@@ -1041,6 +1041,10 @@ nothrow:
     /**
         Print a `TM_Image` in the console buffer.
         At cursor position.
+        This is meant to mirror the behaviour of `printXP`:
+          - it overwrite the style with current style
+          - it changes the current color
+          - it preserved cursor position
     */
     void printImage(ref const(TM_Image) image, int layerMask = -1)
         @trusted
@@ -1066,16 +1070,14 @@ nothrow:
                     TM_CharData src = image.charAt(layer, col, row);
 
                     if (src.glyph == dchar.init)
-                        continue; // transparent
+                        continue; // "transparent" glyph
 
-                    if ( ! validPosition(x + col, y + row) )
-                        return;
-
+                    // PERF; could be more efficient if drawChar is inline, 
+                    // tricky for complete compatibility with earlier behaviour
                     TM_CharData* dst = &charAt(x + col, y + row);
-
-                    dst.glyph = src.glyph;
-                    dst.color = src.color;
-                    // Note: attributes left untouched, as in printXP
+                    fg(src.color & 0x0f);
+                    bg((src.color >>> 4) & 0x0f);
+                    drawChar(x + col, y + row, src.glyph);
                 }
             }
         }
@@ -4716,7 +4718,7 @@ nothrow:
                     bgM = console.findColorMatch(bgr, bgg, bgb);
 
                     TM_CharData* p = &outImage.charAt(layer, x, y);
-                    p.color = cast(ubyte)(fgM | (4 << bgM));
+                    p.color = cast(ubyte)(fgM | (bgM << 4));
                     p.glyph = ch;
                 }
             }
