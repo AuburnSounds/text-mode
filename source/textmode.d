@@ -2241,13 +2241,8 @@ private:
                 postS = &_post[_postWidth * y];
                 yuvS  = &_yuv[_postWidth * y];
 
-                for (int x = r.left; x < r.right; ++x)
-                {
-                    // PERF: speed-up that loop
-                    rgba_t col = postS[x];
-                    YCbCrA_t inYUV = RGBToBT601(col);
-                    yuvS[x] = inYUV;
-                }
+                int count = r.right - r.left;
+                convertRGBA8ToBT601(&yuvS[r.left], &postS[r.left], count);
             }
 
             YCbCrA_t[] yuv = _yuv;
@@ -2602,6 +2597,88 @@ YCbCrA_t RGBToBT601(rgba_t c)
     r.Cr = Cr;
     r.a = c.a;
     return r;
+}
+
+// TODO: move that to intel-intrinsics
+__m128i _mm_movelh_epi32 (__m128i a, __m128i b) pure @trusted
+{    
+    a.ptr[2] = b.array[0];
+    a.ptr[3] = b.array[1];
+    return a;
+}
+
+__m128i _mm_movehl_epi32 (__m128i a, __m128i b) pure @trusted
+{
+    a.ptr[0] = b.array[2];
+    a.ptr[1] = b.array[3];
+    return a;
+}
+
+void _MM_TRANSPOSE4_EPI32 (ref __m128i row0, ref __m128i row1, ref __m128i row2, ref __m128i row3) pure @safe
+{
+    __m128i tmp3, tmp2, tmp1, tmp0;
+    tmp0 = _mm_unpacklo_epi32(row0, row1);
+    tmp2 = _mm_unpacklo_epi32(row2, row3);
+    tmp1 = _mm_unpackhi_epi32(row0, row1);
+    tmp3 = _mm_unpackhi_epi32(row2, row3);
+    row0 = _mm_movelh_epi32(tmp0, tmp2);
+    row1 = _mm_movehl_epi32(tmp2, tmp0);
+    row2 = _mm_movelh_epi32(tmp1, tmp3);
+    row3 = _mm_movehl_epi32(tmp3, tmp1);
+}
+
+void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
+{
+    __m128i zero = _mm_setzero_si128();
+    int n = 0;
+    for (; n + 3 < count; n += 4)
+    {
+        // PERF: not optimal for A
+        // Read 4 pixels
+        __m128i input    = _mm_loadu_si128(cast(const(__m128i)*) &rgba[n]); // R0 G0 B0 A0 R1 G1 B1 A1 R2 G2 B2 A2 R3 G3 B3 A3
+        __m128i pixels01 = _mm_unpacklo_epi8(input, zero); // R0 G0 B0 A0 R1 G1 B1 A1
+        __m128i pixels23 = _mm_unpackhi_epi8(input, zero); // R2 G2 B2 A2 R3 G3 B3 A3
+
+        const __m128i mulY  = _mm_setr_epi16( 66,  129,  25, 0,  66,  128,  25, 0);
+        const __m128i mulCb = _mm_setr_epi16(-38,  -74, 112, 0, -38,  -74, 112, 0);
+        const __m128i mulCr = _mm_setr_epi16(127, -106, -21, 0, 127, -106, -21, 0);
+        const __m128i mulA  = _mm_setr_epi16(  0,    0,   0, 256, 0,    0,   0, 256);
+
+        __m128i pixels01_Y = _mm_madd_epi16(pixels01, mulY);
+        __m128i pixels23_Y = _mm_madd_epi16(pixels23, mulY);
+        __m128i A = _mm_hadd_epi32(pixels01_Y, pixels23_Y); // Y0 Y1 Y2 Y3
+
+        __m128i pixels01_Cb = _mm_madd_epi16(pixels01, mulCb);
+        __m128i pixels23_Cb = _mm_madd_epi16(pixels23, mulCb);
+        __m128i B = _mm_hadd_epi32(pixels01_Cb, pixels23_Cb); // Cb0 Cb1 Cb2 Cb3
+
+        __m128i pixels01_Cr = _mm_madd_epi16(pixels01, mulCr);
+        __m128i pixels23_Cr = _mm_madd_epi16(pixels23, mulCr);
+        __m128i C = _mm_hadd_epi32(pixels01_Cr, pixels23_Cr); // Cr0 Cr1 Cr2 Cr3
+
+        __m128i pixels01_A = _mm_madd_epi16(pixels01, mulA);
+        __m128i pixels23_A = _mm_madd_epi16(pixels23, mulA);
+        __m128i D = _mm_hadd_epi32(pixels01_A, pixels23_A); // A0 A1 A2 A3
+
+        _MM_TRANSPOSE4_EPI32(A, B, C, D);
+
+        __m128i rounding = _mm_setr_epi32(4096, 32768, 32768, 128);
+
+        A = _mm_srli_epi32( _mm_add_epi32(A, rounding), 8); // Y0 Cb0 Cr0 A0
+        B = _mm_srli_epi32( _mm_add_epi32(B, rounding), 8); // Y1 Cb1 Cr1 A1
+        C = _mm_srli_epi32( _mm_add_epi32(C, rounding), 8); // Y2 Cb2 Cr2 A2
+        D = _mm_srli_epi32( _mm_add_epi32(D, rounding), 8); // Y3 Cb3 Cr3 A3
+
+        __m128i output01 = _mm_packs_epi32(A, B);
+        __m128i output23 = _mm_packs_epi32(C, D);
+        __m128i output0123 = _mm_packus_epi16(output01, output23);
+        _mm_storeu_si128(cast(__m128i*) &yuv[n], output0123);
+    }
+
+    for (; n < count; ++n)
+    {
+        yuv[n] = RGBToBT601(rgba[n]);
+    }
 }
 
 rgba_t BT601ToRGB(YCbCrA_t c)
