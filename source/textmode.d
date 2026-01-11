@@ -2591,6 +2591,10 @@ YCbCrA_t RGBToBT601(rgba_t c)
     ubyte Cb = (cast(ushort)(-38 * c.r -  74 * c.g + 112 * c.b + 32768)) >>> 8;
     ubyte Cr = (cast(ushort)(127 * c.r - 106 * c.g -  21 * c.b + 32768)) >>> 8;
 
+   // On Microsoft website:
+   // ubyte Cr = (cast(ushort)(112 * c.r - 94 * c.g -  18 * c.b + 32768)) >>> 8;
+
+
     YCbCrA_t r;
     r.Y  = Y;
     r.Cb = Cb;
@@ -2697,6 +2701,48 @@ rgba_t BT601ToRGB(YCbCrA_t c)
     col.a = c.a;
     return col;
 }
+
+// FUTURE: our BT601 conversion doesn't get back to the same value
+// which isn't so dire, as it's used as an effect...
+/*
+unittest
+{
+    // test roundtrip through BT601
+    for (int red = 0; red < 256; red += 1)
+        for (int green = 0; green < 256; green += 1)
+            for (int blue = 0; blue < 256; blue += 1)
+            {
+                //int red = 0;
+             //   int green = 0;
+                //int blue = 0;
+                ubyte alpha = 255;
+                rgba_t rgba = rgba_t(cast(ubyte)red, cast(ubyte)green, cast(ubyte)blue, alpha);
+
+                auto yuv = RGBToBT601(rgba);
+                rgba_t back = BT601ToRGB(yuv);
+
+                import std;
+  //              debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
+
+                if (abs_int32(red   - back.r) >= 4)
+                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
+
+                if (abs_int32(green - back.g) >= 4)
+                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
+
+                if (abs_int32(blue  - back.b) >= 4)
+                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
+
+                if (abs_int32(alpha - back.a) >= 4)
+                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
+
+                assert(abs_int32(red   - back.r) < 10);
+                assert(abs_int32(green - back.g) < 10);
+                assert(abs_int32(blue  - back.b) < 10);
+                assert(abs_int32(alpha - back.a) < 10);
+            }
+}
+*/
 
 // 16x16 patch of 8-bit blue noise, tileable.
 // This is used over the whole buffer.
