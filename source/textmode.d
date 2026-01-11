@@ -2282,6 +2282,8 @@ private:
             finalScan = &_final[_postWidth * y];
             bool chromaNoise = ((y / _outScaleY) & 3) != 0;
 
+            // PERF: work on a rgba32f scanline buffer...
+
             for (int x = r.left; x < r.right; ++x)
             {
                 __m128 blur;
@@ -2685,19 +2687,29 @@ void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
     }
 }
 
-rgba_t BT601ToRGB(YCbCrA_t c)
+rgba_t BT601ToRGB(YCbCrA_t c) @trusted
 {
-    // PERF: this is bad
-    int Y = c.Y - 16;
-    int Cr = c.Cr - 128;
+    // 16-bit fixed point coefficients (multiply by 65536)
+    enum int Y_SCALE = 76309;   // 1.16438356164 * 65536
+    enum int CR_R    = 104597;  // 1.59602678571 * 65536
+    enum int CB_G    = 25675;   // 0.39176229009 * 65536
+    enum int CR_G    = 53279;   // 0.81296764723 * 65536
+    enum int CB_B    = 132201;  // 2.01723214286 * 65536
+
+    int Y  = c.Y - 16;
     int Cb = c.Cb - 128;
-    float R  = (255.0f / 219) * Y                                        + (255.0f/224)*1.402* Cr;
-    float G  = (255.0f / 219) * Y - (255.0f/224)*1.772*(0.114/0.587)* Cb - (255.0f/224)*1.402*(0.299f/0.587)* Cr;
-    float B  = (255.0f / 219) * Y + (255.0f/224)*1.772              * Cb;
+    int Cr = c.Cr - 128;
+
+
+    // Fixed-point calculation, then shift right by 16
+    int R = (Y_SCALE * Y               + CR_R * Cr) >> 16;
+    int G = (Y_SCALE * Y - CB_G * Cb   - CR_G * Cr) >> 16;
+    int B = (Y_SCALE * Y + CB_B * Cb              ) >> 16;
+
     rgba_t col;
-    col.r = clamp0_255(cast(int)R);
-    col.g = clamp0_255(cast(int)G); // not sure if rounding offset needed here
-    col.b = clamp0_255(cast(int)B);
+    col.r = clamp0_255(R);
+    col.g = clamp0_255(G);
+    col.b = clamp0_255(B);
     col.a = c.a;
     return col;
 }
