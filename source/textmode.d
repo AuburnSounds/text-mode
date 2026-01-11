@@ -2386,15 +2386,8 @@ private:
                     yuvbufS[x] = P_YCbCr;
                 }
 
-                //  Convert back in RGB
+                //  Convert back in RGB (in-place actually)
                 convertBT601ToRGBInPlace(&yuvbufS[r.left], &yuvbufS2[r.left], N);
-
-                /*
-                for (int x = r.left; x < r.right; ++x)
-                {
-                    // write in yuvbuf anyway
-                    yuvbufS2[x] = BT601ToRGB(yuvbufS[x]);
-                }*/
 
                 for (int x = r.left; x < r.right; ++x)
                 {
@@ -2697,6 +2690,7 @@ void _MM_TRANSPOSE4_EPI32 (ref __m128i row0, ref __m128i row1, ref __m128i row2,
     row3 = _mm_movehl_epi32(tmp3, tmp1);
 }
 
+// FUTURE: could be more precise actually. See convertBT601ToRGBInPlace which used 19.13 fixed point
 void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
 {
     __m128i zero = _mm_setzero_si128();
@@ -2751,93 +2745,89 @@ void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
     }
 }
 
-rgba_t BT601ToRGB(YCbCrA_t c) @trusted
-{
-    // 16-bit fixed point coefficients (multiply by 65536)
-    enum int Y_SCALE = 76309;   // 1.16438356164 * 65536
-    enum int CR_R    = 104597;  // 1.59602678571 * 65536
-    enum int CB_G    = 25675;   // 0.39176229009 * 65536
-    enum int CR_G    = 53279;   // 0.81296764723 * 65536
-    enum int CB_B    = 132201;  // 2.01723214286 * 65536
-    
-    int Y  = c.Y - 16;
-    int Cb = c.Cb - 128;
-    int Cr = c.Cr - 128;
-    
-    
-    // Fixed-point calculation, then shift right by 16
-    int R = (Y_SCALE * Y               + CR_R * Cr) >> 16;
-    int G = (Y_SCALE * Y - CB_G * Cb   - CR_G * Cr) >> 16;
-    int B = (Y_SCALE * Y + CB_B * Cb              ) >> 16;
-    
-    rgba_t col;
-    col.r = clamp0_255(R);
-    col.g = clamp0_255(G);
-    col.b = clamp0_255(B);
-    col.a = c.a;
-    return col;
-}
-
+// FUTURE: interesting "broken" effect if you only convert 1 out of 4 pixels...
+//         try 1 out of 2 also!
 // in and out can be the same pointer
 void convertBT601ToRGBInPlace(YCbCrA_t* inBuf, rgba_t* outBuf, int N) @trusted
 {
+    // 13-bit fixed point coefficients
+    // Bitness was reduced until it all fits in a short
+    enum short YSCALE = 9539;  // 1.16438356164 
+    enum short CR_R   = 13075; // 1.59602678571
+    enum short CB_G   = 3209;  // 0.39176229009
+    enum short CR_G   = 6660;  // 0.81296764723
+    enum short CB_B   = 16525; // 2.01723214286
+    enum short ONE    = 8192;  // 1.0
+
     int n = 0;
-    for ( ; n + 3 < N; n += 4)
-    {
-        outBuf[n] = BT601ToRGB(inBuf[n]);
-        outBuf[n+1] = BT601ToRGB(inBuf[n+1]);
-        outBuf[n+2] = BT601ToRGB(inBuf[n+2]);
-        outBuf[n+3] = BT601ToRGB(inBuf[n+3]);
-    }
 
     for ( ; n + 3 < N; n += 4)
     {
-        outBuf[n] = BT601ToRGB(inBuf[n]);
+        __m128i Z = _mm_setzero_si128();
+        __m128i pixels0123 = _mm_loadu_si128( cast(const(__m128i)*) &inBuf[n] );
+        __m128i pixels01 = _mm_unpacklo_epi8(pixels0123, Z); // R0 G0 B0 A0 R1 G1 B1 A1
+        __m128i pixels23 = _mm_unpackhi_epi8(pixels0123, Z); // R2 G2 B2 A2 R3 G3 B3 A3
+         const __m128i mulR = _mm_setr_epi16(YSCALE, 0, CR_R, 0, YSCALE, 0, CR_R, 0); // to compute reds
+         const __m128i mulG = _mm_setr_epi16(YSCALE, -CB_G, -CR_G, 0, YSCALE, -CB_G, -CR_G, 0); // to compute green
+         const __m128i mulB = _mm_setr_epi16(YSCALE, CB_B, 0, 0, YSCALE, CB_B, 0, 0); // to compute blue
+         const __m128i mulA = _mm_setr_epi16(0, 0, 0, ONE, 0, 0, 0, ONE); // to compute alpha
+
+        __m128i offset = _mm_setr_epi16(-16, -128, -128, 0, -16, -128, -128, 0);
+        pixels01 = _mm_add_epi16(pixels01, offset);
+        pixels23 = _mm_add_epi16(pixels23, offset);
+
+        __m128i pixels01_R = _mm_madd_epi16(pixels01, mulR);
+        __m128i pixels23_R = _mm_madd_epi16(pixels23, mulR);
+        __m128i A = _mm_hadd_epi32(pixels01_R, pixels23_R); // R0 R1 R2 R3
+
+        __m128i pixels01_G = _mm_madd_epi16(pixels01, mulG);
+        __m128i pixels23_G = _mm_madd_epi16(pixels23, mulG);
+        __m128i B = _mm_hadd_epi32(pixels01_G, pixels23_G); 
+
+        __m128i pixels01_B = _mm_madd_epi16(pixels01, mulB);
+        __m128i pixels23_B = _mm_madd_epi16(pixels23, mulB);
+        __m128i C = _mm_hadd_epi32(pixels01_B, pixels23_B);
+
+        __m128i pixels01_A = _mm_madd_epi16(pixels01, mulA);
+        __m128i pixels23_A = _mm_madd_epi16(pixels23, mulA);
+        __m128i D = _mm_hadd_epi32(pixels01_A, pixels23_A);
+
+        _MM_TRANSPOSE4_EPI32(A, B, C, D);
+
+        A = _mm_srai_epi32( A, 13); // R0 G0 B0 A0
+        B = _mm_srai_epi32( B, 13); // R1 G1 B1 A1
+        C = _mm_srai_epi32( C, 13); // R2 G2 B2 A2
+        D = _mm_srai_epi32( D, 13); // R3 G3 B3 A3
+        __m128i output01 = _mm_packs_epi32(A, B);
+        __m128i output23 = _mm_packs_epi32(C, D);
+        __m128i output0123 = _mm_packus_epi16(output01, output23);
+        _mm_storeu_si128(cast(__m128i*) &outBuf[n], output0123);
     }
 
+    for ( ; n < N; ++n)
+    {
+        YCbCrA_t c = inBuf[n];
+
+        int Y  = c.Y - 16;
+        int Cb = c.Cb - 128;
+        int Cr = c.Cr - 128;    
+
+        // Fixed-point calculation
+        int R = (YSCALE * Y               + CR_R * Cr) >> 13;
+        int G = (YSCALE * Y - CB_G * Cb   - CR_G * Cr) >> 13;
+        int B = (YSCALE * Y + CB_B * Cb              ) >> 13;
+
+        rgba_t col;
+        col.r = clamp0_255(R);
+        col.g = clamp0_255(G);
+        col.b = clamp0_255(B);
+        col.a = c.a;
+        outBuf[n] = col;
+    }
 }
 
 // FUTURE: our BT601 conversion doesn't get back to the same value
 // which isn't so dire, as it's used as an effect...
-/*
-unittest
-{
-    // test roundtrip through BT601
-    for (int red = 0; red < 256; red += 1)
-        for (int green = 0; green < 256; green += 1)
-            for (int blue = 0; blue < 256; blue += 1)
-            {
-                //int red = 0;
-             //   int green = 0;
-                //int blue = 0;
-                ubyte alpha = 255;
-                rgba_t rgba = rgba_t(cast(ubyte)red, cast(ubyte)green, cast(ubyte)blue, alpha);
-
-                auto yuv = RGBToBT601(rgba);
-                rgba_t back = BT601ToRGB(yuv);
-
-                import std;
-  //              debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
-
-                if (abs_int32(red   - back.r) >= 4)
-                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
-
-                if (abs_int32(green - back.g) >= 4)
-                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
-
-                if (abs_int32(blue  - back.b) >= 4)
-                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
-
-                if (abs_int32(alpha - back.a) >= 4)
-                    debug writefln("rgba = %s    yuv = %s   back = %s", rgba, yuv, back);
-
-                assert(abs_int32(red   - back.r) < 10);
-                assert(abs_int32(green - back.g) < 10);
-                assert(abs_int32(blue  - back.b) < 10);
-                assert(abs_int32(alpha - back.a) < 10);
-            }
-}
-*/
 
 // 16x16 patch of 8-bit blue noise, tileable.
 // This is used over the whole buffer.
