@@ -1442,6 +1442,12 @@ private:
     // (such as with BT.601 for example).
     YCbCrA_t[] _yuv;
 
+    // A buffer of a single scan line, utilized for compositing effect.
+    rgba32f_t[] _fxbuf = null;
+
+    // A buffer of a single scan line, utilized for compositin effect in YUV.
+    YCbCrA_t[] _yuvbuf = null;
+
     // Blur is invalidated by filling it with black,
     // to avoid too much recompute.
     bool _blurIsCompletelyBlack = false;
@@ -1713,11 +1719,28 @@ private:
 
         // YUV buffer has 2 more lines for sampling 2x2
         size_t n2 = width * (height + 2); 
+
+        // scanline sized buffer
+        size_t n3 = width;
+
+        static void align16(ref ubyte* pt)
+        {
+            size_t asInt = cast(size_t)pt;
+            size_t remainder = asInt & 15;
+            size_t offset = (16 - remainder) & 15;
+            pt += offset;
+        }
+
         _post  = (cast(rgba_t*   )p)[0..n]; p += n * 4;
         _final = (cast(rgba_t*   )p)[0..n]; p += n * 4;
         _yuv   = (cast(YCbCrA_t* )p)[0..n2]; p += n2 * 4;
         _emit  = (cast(rgba16_t* )p)[0..n]; p += n * 8;
         _emitH = (cast(rgba16_t* )p)[0..n]; p += n * 8;
+        align16(p);
+        _yuvbuf = (cast(YCbCrA_t*)p)[0..n3]; p += n3 * 4;
+        align16(p);
+        _fxbuf = (cast(rgba32f_t*)p)[0..n3]; p += n3 * 16;
+        align16(p);
         _blur  = (cast(rgba32f_t*)p)[0..n]; p += n * 16;
         return p - pold;
     }
@@ -2276,31 +2299,46 @@ private:
             const(rgba_t)*    postS;
             const(rgba32f_t)* blurS;
             rgba_t*           finalScan;
+            rgba32f_t*        fxbufS;
+            YCbCrA_t*         yuvbufS;
+            rgba_t*           yuvbufS2;
 
             postS     = &_post[_postWidth * y];
             blurS     = &_blur[_postWidth * y];
             finalScan = &_final[_postWidth * y];
+            fxbufS    = &_fxbuf[0];
+            yuvbufS   = &_yuvbuf[0];
+            yuvbufS2  = cast(rgba_t*)yuvbufS;
+
             bool chromaNoise = ((y / _outScaleY) & 3) != 0;
 
-            // PERF: work on a rgba32f scanline buffer...
+            int N = r.right - r.left;
 
-            for (int x = r.left; x < r.right; ++x)
+            if ( ! _options.crtEmulation)
             {
-                __m128 blur;
-                blur = _mm_loadu_ps(cast(float*)&blurS[x]);
-
-                // PERF: this load is slow, could load 4
-                // pixels at once instead.
-                __m128i post = _mm_loadu_si32(&postS[x]);
-
-                // PERF: downsampling could be done in _yuv
-                // buffer instead.
+                // just convert u8 to float from post buffer to fxbuf
+                __m128i zero = _mm_setzero_si128();
+                for (int x = r.left; x < r.right; ++x)
+                {
+                    __m128i post = _mm_loadu_si32(&postS[x]);                    
+                    post = _mm_unpacklo_epi8(post, zero);
+                    post = _mm_unpacklo_epi16(post, zero);
+                    __m128 postF = _mm_cvtepi32_ps(post);
+                    _mm_store_ps(cast(float*)&fxbufS[x], postF);
+                }
+            }
+            else
+            {
                 // 3 effects here:
                 // - chroma downsampling
                 // - chroma quantization
                 // - chroma noise
-                if (_options.crtEmulation)
+
+                for (int x = r.left; x < r.right; ++x)
                 {
+                    // PERF: downsampling could be done in _yuv
+                    // buffer instead.
+                    
                     // Find 4 pixels in the 2x2 patch,
                     // and the one we are in too `P`.
                     // _yuv is extended for that being
@@ -2324,6 +2362,8 @@ private:
                     YCbCrA_t D = pYUV[i0 + W + 1];
 
                     // chroma is subsampled 4:2:0
+                    // This is a bit blurry but give that nosltagic feel,
+                    // even though it's not so much CRT rather than "old video"
                     // PERF: user _mm_avg intrin
                     P_YCbCr.Cb = (A.Cb + C.Cb
                                 + B.Cb + D.Cb + 2) / 4;
@@ -2343,8 +2383,22 @@ private:
                         P_YCbCr.Cr = (P_YCbCr.Cr & 0xfc)
                                    + (NOISE_16x16[Cr_noise]>>>6);
                     }
+                    yuvbufS[x] = P_YCbCr;
+                }
 
-                    rgba_t subsmp = BT601ToRGB(P_YCbCr);
+                //  Convert back in RGB
+                convertBT601ToRGBInPlace(&yuvbufS[r.left], &yuvbufS2[r.left], N);
+
+                /*
+                for (int x = r.left; x < r.right; ++x)
+                {
+                    // write in yuvbuf anyway
+                    yuvbufS2[x] = BT601ToRGB(yuvbufS[x]);
+                }*/
+
+                for (int x = r.left; x < r.right; ++x)
+                {
+                    rgba_t subsmp = yuvbufS2[x];
 
                     // Blend additional RGB matrix to
                     // simulate a screen.
@@ -2372,17 +2426,24 @@ private:
                             break;
                         default: break;
                     }
-                    post = _mm_loadu_si32(&subsmp);
-                }
+                    __m128i post = _mm_loadu_si32(&subsmp);
 
-                __m128i zero;
-                zero = 0;
-                post = _mm_unpacklo_epi8(post, zero);
-                post = _mm_unpacklo_epi16(post, zero);
-                __m128 postF = _mm_cvtepi32_ps(post);
+                    __m128i zero = _mm_setzero_si128();
+                    post = _mm_unpacklo_epi8(post, zero);
+                    post = _mm_unpacklo_epi16(post, zero);
+                    __m128 postF = _mm_cvtepi32_ps(post);
+                    _mm_store_ps(cast(float*)&fxbufS[x], postF); // PERF align this buffer and store
+                }
+            }
+
+            for (int x = r.left; x < r.right; ++x)
+            {
+                __m128 postF = _mm_load_ps(cast(const(float)*) &fxbufS[x]);
 
                 __m128 blurAmt;
                 blurAmt = _options.blurAmount;
+                __m128 blur;
+                blur = _mm_loadu_ps(cast(float*)&blurS[x]);
 
                 // Add blur
                 __m128 RGB = postF + blur * blurAmt;
@@ -2421,10 +2482,13 @@ private:
                     RGB.ptr[1] += exceedLuma * tmRat;
                     RGB.ptr[2] += exceedLuma * tmRat;
                 }
-                post = _mm_cvttps_epi32(RGB);
-                post = _mm_packs_epi32(post, zero);
-                post = _mm_packus_epi16(post, zero);
-                _mm_storeu_si32(&finalScan[x], post);
+
+                // back to u8
+                __m128i zero = _mm_setzero_si128();
+                __m128i finalCol = _mm_cvttps_epi32(RGB);
+                finalCol = _mm_packs_epi32(finalCol, zero);
+                finalCol = _mm_packus_epi16(finalCol, zero);
+                _mm_storeu_si32(&finalScan[x], finalCol);
             }
         }
     }
@@ -2695,23 +2759,42 @@ rgba_t BT601ToRGB(YCbCrA_t c) @trusted
     enum int CB_G    = 25675;   // 0.39176229009 * 65536
     enum int CR_G    = 53279;   // 0.81296764723 * 65536
     enum int CB_B    = 132201;  // 2.01723214286 * 65536
-
+    
     int Y  = c.Y - 16;
     int Cb = c.Cb - 128;
     int Cr = c.Cr - 128;
-
-
+    
+    
     // Fixed-point calculation, then shift right by 16
     int R = (Y_SCALE * Y               + CR_R * Cr) >> 16;
     int G = (Y_SCALE * Y - CB_G * Cb   - CR_G * Cr) >> 16;
     int B = (Y_SCALE * Y + CB_B * Cb              ) >> 16;
-
+    
     rgba_t col;
     col.r = clamp0_255(R);
     col.g = clamp0_255(G);
     col.b = clamp0_255(B);
     col.a = c.a;
     return col;
+}
+
+// in and out can be the same pointer
+void convertBT601ToRGBInPlace(YCbCrA_t* inBuf, rgba_t* outBuf, int N) @trusted
+{
+    int n = 0;
+    for ( ; n + 3 < N; n += 4)
+    {
+        outBuf[n] = BT601ToRGB(inBuf[n]);
+        outBuf[n+1] = BT601ToRGB(inBuf[n+1]);
+        outBuf[n+2] = BT601ToRGB(inBuf[n+2]);
+        outBuf[n+3] = BT601ToRGB(inBuf[n+3]);
+    }
+
+    for ( ; n + 3 < N; n += 4)
+    {
+        outBuf[n] = BT601ToRGB(inBuf[n]);
+    }
+
 }
 
 // FUTURE: our BT601 conversion doesn't get back to the same value
