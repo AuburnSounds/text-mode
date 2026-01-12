@@ -2425,10 +2425,11 @@ private:
                     post = _mm_unpacklo_epi8(post, zero);
                     post = _mm_unpacklo_epi16(post, zero);
                     __m128 postF = _mm_cvtepi32_ps(post);
-                    _mm_store_ps(cast(float*)&fxbufS[x], postF); // PERF align this buffer and store
+                    _mm_store_ps(cast(float*)&fxbufS[x], postF);
                 }
             }
 
+            // Add blur
             for (int x = r.left; x < r.right; ++x)
             {
                 __m128 postF = _mm_load_ps(cast(const(float)*) &fxbufS[x]);
@@ -2436,13 +2437,22 @@ private:
                 __m128 blurAmt;
                 blurAmt = _options.blurAmount;
                 __m128 blur;
-                blur = _mm_loadu_ps(cast(float*)&blurS[x]);
+                blur = _mm_loadu_ps(cast(float*)&blurS[x]); // PERF align this load
 
                 // Add blur
                 __m128 RGB = postF + blur * blurAmt;
 
-                if (_options.vignetting)
+                _mm_store_ps(cast(float*) &fxbufS[x], RGB);
+            }
+
+
+            if (_options.vignetting)
+            {
+                for (int x = r.left; x < r.right; ++x)
                 {
+                    __m128 RGB = _mm_load_ps(cast(const(float)*) &fxbufS[x]);
+
+
                     float dist2 = (vCx-x)*(vCx-x)+(vCy-y)*(vCy-y);
                     float amt = sqrt(dist2) / maxDistVignetting;
                     assert(amt >= 0);
@@ -2452,10 +2462,17 @@ private:
 
                     // Note: clamped by subsequent code
                     RGB = RGB + (vigColor - RGB) * amt;
-                }
 
-                if (_options.tonemapping)
+                    _mm_store_ps(cast(float*) &fxbufS[x], RGB);
+                }
+            }
+
+            if (_options.tonemapping)
+            {
+                for (int x = r.left; x < r.right; ++x)
                 {
+                    __m128 RGB = _mm_load_ps(cast(const(float)*) &fxbufS[x]);
+
                     // PERF: SIMD
                     // Similar tonemapping as Dplug.
                     float tmThre  = 255.0f;
@@ -2474,9 +2491,15 @@ private:
                     RGB.ptr[0] += exceedLuma * tmRat;
                     RGB.ptr[1] += exceedLuma * tmRat;
                     RGB.ptr[2] += exceedLuma * tmRat;
-                }
 
-                // back to u8
+                    _mm_store_ps(cast(float*) &fxbufS[x], RGB);
+                }
+            }
+
+            // back to u8
+            for (int x = r.left; x < r.right; ++x)
+            {
+                __m128 RGB = _mm_load_ps(cast(const(float)*) &fxbufS[x]);
                 __m128i zero = _mm_setzero_si128();
                 __m128i finalCol = _mm_cvttps_epi32(RGB);
                 finalCol = _mm_packs_epi32(finalCol, zero);
