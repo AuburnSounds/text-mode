@@ -205,12 +205,13 @@ enum : TM_Palette
     TM_paletteVScode,       ///
     TM_paletteGruvbox,      ///
     TM_paletteNyx,          ///
+    TM_paletteGraillon      /// 
 }
 
 /**
     Number of pre-defined palettes.
 */
-enum TM_PALETTE_NUM = 9;
+enum TM_PALETTE_NUM = 10;
 
 /**
     Selected vintage font.
@@ -3010,7 +3011,14 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
     [ 0x0a071800, 0x91114cff, 0x2a2e33ff, 0x5f5240ff,
       0x23263eff, 0x7329a2ff, 0xbdbbeeff, 0x9aa2a9ff,
       0x565b69ff, 0xfd116cff, 0x859480ff, 0xe6cd6bff,
-      0x3a3a85ff, 0x9d2be9ff, 0x60c6f1ff, 0xefeef1ff ]
+      0x3a3a85ff, 0x9d2be9ff, 0x60c6f1ff, 0xefeef1ff ],
+
+    // Graillon, inspired by Graillon interface
+    // https://www.auburnsounds.com/
+    [ 0x1a102400, 0x4a3441ff, 0x7e9e8fff, 0x4f3033ff,
+      0x303091ff, 0x8b326fff, 0x7c93b3ff, 0x917f83ff,
+      0x3d2d37ff, 0xe96979ff, 0xa9efadff, 0xff9f74ff,
+      0x5555ffff, 0xe652b7ff, 0x97ebebff, 0xe7dcdeff ]
 ];
 
 alias TM_RangeFlags = int;
