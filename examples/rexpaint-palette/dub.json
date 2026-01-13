@@ -1,0 +1,8 @@
+{
+    "name": "rexpaint-palette",
+    "description": "Output text-mode palettes as REXPaint palette",
+    "dependencies": 
+    {
+        "text-mode" : { "path" : "../.." }
+    }
+}
