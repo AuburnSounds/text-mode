@@ -4918,7 +4918,6 @@ nothrow:
                             continue; // glyph already set to 0xffff
                     }
                 }
-                skipBytes(width * height * 4); // #OVERFLOW
             }
             _input = tmp;
         }
