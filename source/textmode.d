@@ -205,13 +205,14 @@ enum : TM_Palette
     TM_paletteVScode,       ///
     TM_paletteGruvbox,      ///
     TM_paletteNyx,          ///
-    TM_paletteGraillon      /// 
+    TM_paletteGraillon,     /// 
+    TM_paletteCouture,      ///
 }
 
 /**
     Number of pre-defined palettes.
 */
-enum TM_PALETTE_NUM = 10;
+enum TM_PALETTE_NUM = 11;
 
 /**
     Selected vintage font.
@@ -3018,7 +3019,14 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
     [ 0x0b070f00, 0x4a3441ff, 0x7e9e8fff, 0x593d20ff,
       0x2e3084ff, 0x8b326fff, 0x7c93b3ff, 0x917f83ff,
       0x3d2d37ff, 0xe96979ff, 0xa9efadff, 0xff9f74ff,
-      0x5f74ffff, 0xe652b7ff, 0x97ebebff, 0xe7dcdeff ]
+      0x5f74ffff, 0xe652b7ff, 0x97ebebff, 0xe7dcdeff ],
+
+    // Couture-inspired palette: grey, white, black, red
+    // Clearly lacks mauve, blue, green, cyan
+    [ 0x1b1d2800, 0x832539ff, 0xb2b3bdff, 0x832539ff,
+      0xb1b3bcff, 0x832539ff, 0xb1b3bcff, 0xb1b2bcff,
+      0x3b3e47ff, 0xd43e49ff, 0xe5e7e2ff, 0xd43e49ff,
+      0xe5e7e2ff, 0xd43e49ff, 0xe5e7e2ff, 0xe5e7e2ff ],
 ];
 
 alias TM_RangeFlags = int;
