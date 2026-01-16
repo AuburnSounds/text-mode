@@ -19,7 +19,8 @@ void main()
         "VScode",
         "Gruvbox",
         "Nyx",
-        "Graillon"
+        "Graillon",
+        "Couture"
     ];
 
     // Create a console to access palette data
