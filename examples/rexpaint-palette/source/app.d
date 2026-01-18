@@ -8,30 +8,18 @@ import textmode;
 // Copy the output .txt files in data/palettes subdir
 void main()
 {
-    // Palette names for reference
-    static immutable string[] paletteNames = [
-        "Vintage",
-        "Campbell", 
-        "OneHalfLight",
-        "Tango",
-        "Vga",
-        "Windows10",
-        "VScode",
-        "Gruvbox",
-        "Nyx",
-        "Graillon",
-        "Couture"
-    ];
+
 
     // Create a console to access palette data
     auto console = TM_Console(80, 25);
 
     foreach (palIdx; 0 .. TM_PALETTE_NUM)
     {
+        string paletteName = console.getPaletteName(palIdx);
         // Set the palette
         console.palette(cast(TM_Palette) palIdx);
 
-        auto filename = format("%s.txt", paletteNames[palIdx]);
+        auto filename = format("%s.txt", paletteName);
         auto f = File(filename, "w");
 
         writefln("Writing %s...", filename);

@@ -207,12 +207,14 @@ enum : TM_Palette
     TM_paletteNyx,          ///
     TM_paletteGraillon,     /// 
     TM_paletteCouture,      ///
+    TM_paletteRenegate,     ///
 }
 
 /**
     Number of pre-defined palettes.
+    Keep it sync with above.
 */
-enum TM_PALETTE_NUM = 11;
+enum TM_PALETTE_NUM = 12;
 
 /**
     Selected vintage font.
@@ -565,6 +567,32 @@ nothrow:
             ubyte a = 0xff & col;
             setPaletteEntry(entry, r, g, b, a);
         }
+    }
+
+    /** 
+        Get a palette preset name.
+        There are 0..TM_PALETTE_NUM palette presets.
+    */
+    static string getPaletteName(TM_Palette palette)
+    {
+        // Palette names for reference
+        static immutable string[] TM_PALETTE_NAMES = 
+        [
+            "Vintage",
+            "Campbell", 
+            "OneHalfLight",
+            "Tango",
+            "Vga",
+            "Windows10",
+            "VScode",
+            "Gruvbox",
+            "Nyx",
+            "Graillon",
+            "Couture",
+            "Renegate"
+        ];
+
+        return TM_PALETTE_NAMES[palette];
     }
 
     /**
@@ -3027,6 +3055,13 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
       0xb1b3bcff, 0x832539ff, 0xb1b3bcff, 0xb1b2bcff,
       0x3b3e47ff, 0xd43e49ff, 0xe5e7e2ff, 0xd43e49ff,
       0xe5e7e2ff, 0xd43e49ff, 0xe5e7e2ff, 0xe5e7e2ff ],
+
+    // Renegate-inspired palette
+    // has inverted orange/yellow and red
+    [ 0x03121200, 0xb38769ff, 0x72897aff, 0x6f4e4dff,
+      0x0ca9bbff, 0x7a5b6aff, 0x0ca9bbff, 0x6d7977ff,
+      0x4a4a48ff, 0xffce96ff, 0x88ab7aff, 0xfdb0b0ff,
+      0x96f8f8ff, 0x9b7486ff, 0x96f8f8ff, 0xfff8f8ff ],
 ];
 
 alias TM_RangeFlags = int;
