@@ -38,25 +38,39 @@ enum : TM_Color
     TM_colorLMagenta = 13, ///
     TM_colorLCyan    = 14, ///
     TM_colorWhite    = 15, ///
-
-    // old names
-    deprecated TM_black    = 0,
-    deprecated TM_red      = 1,
-    deprecated TM_green    = 2,
-    deprecated TM_orange   = 3,
-    deprecated TM_blue     = 4,
-    deprecated TM_magenta  = 5,
-    deprecated TM_cyan     = 6,
-    deprecated TM_lgrey    = 7,
-    deprecated TM_grey     = 8,
-    deprecated TM_lred     = 9,
-    deprecated TM_lgreen   = 10,
-    deprecated TM_yellow   = 11,
-    deprecated TM_lblue    = 12,
-    deprecated TM_lmagenta = 13,
-    deprecated TM_lcyan    = 14,
-    deprecated TM_white    = 15
 }
+
+// old names and possible confusions
+deprecated("Use TM_colorBlack instead")    alias TM_black = TM_colorBlack;
+deprecated("Use TM_colorRed instead")      alias TM_red = TM_colorRed;
+deprecated("Use TM_colorGreen instead")    alias TM_green = TM_colorGreen;
+deprecated("Use TM_colorOrange instead")   alias TM_orange = TM_colorOrange;
+deprecated("Use TM_colorBlue instead")     alias TM_blue = TM_colorBlue;
+deprecated("Use TM_colorMagenta instead")  alias TM_magenta = TM_colorMagenta;
+deprecated("Use TM_colorCyan instead")     alias TM_cyan = TM_colorCyan;
+deprecated("Use TM_colorLGrey instead")    alias TM_lgrey = TM_colorLGrey;
+deprecated("Use TM_colorGrey instead")     alias TM_grey = TM_colorGrey;
+deprecated("Use TM_colorLRed instead")     alias TM_lred = TM_colorLRed;
+deprecated("Use TM_colorLGreen instead")   alias TM_lgreen = TM_colorLGreen;
+deprecated("Use TM_colorYellow instead")   alias TM_yellow = TM_colorYellow;
+deprecated("Use TM_colorLBlue instead")    alias TM_lblue = TM_colorLBlue;
+deprecated("Use TM_colorLMagenta instead") alias TM_lmagenta = TM_colorLMagenta;
+deprecated("Use TM_colorLCyan instead")    alias TM_lcyan = TM_colorLCyan;
+deprecated("Use TM_colorWhite instead")    alias TM_white = TM_colorWhite;
+
+// more confusions
+deprecated("Use TM_colorLGrey instead")    alias TM_lightGrey = TM_colorLGrey; 
+deprecated("Use TM_colorLRed instead")     alias TM_lightRed = TM_colorLRed; 
+deprecated("Use TM_colorLGreen instead")   alias TM_lightGreen = TM_colorLGreen; 
+deprecated("Use TM_colorLBlue instead")    alias TM_lightBlue = TM_colorLBlue; 
+deprecated("Use TM_colorLMagenta instead") alias TM_lightMagenta = TM_colorLMagenta; 
+deprecated("Use TM_colorLCyan instead")    alias TM_lightCyan = TM_colorLCyan; 
+deprecated("Use TM_colorLGrey instead")    alias TM_colorLightGrey = TM_colorLGrey; 
+deprecated("Use TM_colorLRed instead")     alias TM_colorLightRed = TM_colorLRed; 
+deprecated("Use TM_colorLGreen instead")   alias TM_colorLightGreen = TM_colorLGreen; 
+deprecated("Use TM_colorLBlue instead")    alias TM_colorLightBlue = TM_colorLBlue; 
+deprecated("Use TM_colorLMagenta instead") alias TM_colorLightMagenta = TM_colorLMagenta; 
+deprecated("Use TM_colorLCyan instead")    alias TM_colorLightCyan = TM_colorLCyan; 
 
 /**
     An individual cell of text-mode buffer.
