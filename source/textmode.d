@@ -6,8 +6,6 @@ import core.stdc.stdlib: malloc, realloc, free;
 import core.stdc.string: memset;
 import core.stdc.math: sqrt, exp;
 
-import std.utf: byDchar;
-
 import inteli.smmintrin;
 import rectlist;
 import miniz;
@@ -825,11 +823,9 @@ nothrow:
     */
     void print(const(char)[] s) pure
     {
-        // FUTURE: replace byDChar by own UTF8-decoding
-        foreach(dchar ch; s.byDchar())
-        {
-            print(ch);
-        }
+        auto dec = UTF8Decoder(s);
+        while (dec.hasMoreChar())
+            print(dec.decodeChar());
     }
     ///ditto
     void print() pure
@@ -838,11 +834,9 @@ nothrow:
     ///ditto
     void print(const(wchar)[] s) pure
     {
-        // FUTURE: replace byDChar by own UTF-16 decoding
-        foreach(dchar ch; s.byDchar())
-        {
-            print(ch);
-        }
+        auto dec = UTF16Decoder(s);
+        while (dec.hasMoreChar())
+            print(dec.decodeChar());
     }
     ///ditto
     void print(const(dchar)[] s) pure
@@ -4490,7 +4484,6 @@ pure:
             return 1;
         }
 
-
         // UTF-8 decoding.
         // This looks verbose compared to how it's
         // supposed to be decoded
@@ -5191,4 +5184,181 @@ uint hashFNV1A32(const(void)[] data, uint seed = 0x811c9dc5)
         result *= 0x01000193;
     }
     return result;
+}
+
+// FUTURE: for some reason this file has two UTF8 decoding, remove the other?
+struct UTF8Decoder
+{
+pure nothrow @nogc @safe:
+
+    const(char[]) buf;
+    int idx;
+
+    this(const(char[]) str)
+    {
+        buf = str;
+        idx = 0;
+    }
+
+    bool hasMoreChar()
+    {
+        return !eoi;
+    }
+
+    dchar decodeChar()
+    {
+        bool err;
+        return decodeChar(err); // ignore invalid
+    }
+
+    // decode, or set error if errored state
+    // in which case, returned value is �
+    dchar decodeChar(out bool err)
+    {
+        assert(!eoi);
+        err = false;
+        uint byte1, byte2, byte3, byte4;
+        uint codepoint;
+        byte1 = pop();
+
+        // 1-byte sequence
+        if ((byte1 & 0x80) == 0)
+            return byte1;
+
+        if (eoi()) 
+            goto invalid;
+
+        // 2-byte sequence
+        if ((byte1 & 0xE0) == 0xC0) 
+        {
+            byte2 = pop();
+            codepoint = ((byte1 & 0x1F) << 6) | byte2;
+            if (codepoint >= 0x80)
+                return codepoint;
+            else
+                goto invalid;
+        }
+
+        // 3-byte sequence (may include unpaired surrogates)
+        if ((byte1 & 0xF0) == 0xE0) 
+        {
+            byte2 = pop();
+            if (eoi) goto invalid;
+            byte3 = pop();
+            codepoint = ((byte1 & 0x0F) << 12) | (byte2 << 6) | byte3;
+            if (codepoint >= 0x0800) 
+            {
+                if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+                    goto invalid; // surrogate
+                return codepoint;
+            } 
+            else 
+                goto invalid;
+        }
+
+        // 4-byte sequence
+        if ((byte1 & 0xF8) == 0xF0) 
+        {
+            byte2 = pop();
+            if (eoi) goto invalid;
+            byte3 = pop();
+            if (eoi) goto invalid;
+            byte4 = pop();
+            codepoint = ((byte1 & 0x07) << 0x12) | (byte2 << 0x0C) | (byte3 << 0x06) | byte4;
+            if (codepoint >= 0x010000 && codepoint <= 0x10FFFF) {
+                return codepoint;
+            } 
+            else 
+                goto invalid;
+        }
+
+    invalid:
+        err = true;
+        return '\U0000FFFD';
+    }
+
+private:
+    bool eoi() 
+    { 
+        return idx >= buf.length; 
+    }
+
+    char pop() 
+    { 
+        assert(!eoi);
+        return buf[idx++];
+    }
+}
+
+struct UTF16Decoder
+{
+pure nothrow @nogc @safe:
+
+    const(wchar[]) buf;
+    int idx;
+
+    this(const(wchar[]) str)
+    {
+        buf = str;
+        idx = 0;
+    }
+
+    bool hasMoreChar()
+    {
+        return !eoi;
+    }
+
+    dchar decodeChar()
+    {
+        bool err;
+        return decodeChar(err); // ignore invalid
+    }
+
+    // decode, or set error if errored state
+    // in which case, returned value is �
+    dchar decodeChar(out bool err)
+    {
+        assert(!eoi);
+        err = false;
+        uint short1, short2;
+        uint codepoint;
+        short1 = pop();
+
+        if (short1 < 0xD800 || short1 > 0xDFFF) 
+        {
+            return short1;
+        } 
+        else if (short1 >= 0xD800 && short1 <= 0xDBFF) 
+        {
+            if (eoi) 
+                goto invalid;
+
+            short2 = pop();
+            if (short2 >= 0xDC00 && short2 <= 0xDFFF) 
+            {
+                codepoint = ((short1 - 0xD800) << 10) | (short2 - 0xDC00);
+                codepoint += 0x10000;
+            } 
+            else 
+                goto invalid;
+        } 
+        else 
+            goto invalid;
+
+    invalid:
+        err = true;
+        return '\U0000FFFD';
+    }
+
+private:
+    bool eoi() 
+    { 
+        return idx >= buf.length; 
+    }
+
+    wchar pop() 
+    { 
+        assert(!eoi);
+        return buf[idx++];
+    }
 }
