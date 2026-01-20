@@ -223,13 +223,14 @@ enum : TM_Palette
     TM_paletteCouture,      ///
     TM_paletteRenegate,     ///
     TM_paletteLens,         ///
+    TM_paletteInnerPitch,   ///
 }
 
 /**
     Number of pre-defined palettes.
     Keep it sync with above.
 */
-enum TM_PALETTE_NUM = 13;
+enum TM_PALETTE_NUM = 14;
 
 /**
     Selected vintage font.
@@ -605,7 +606,8 @@ nothrow:
             "Graillon",
             "Couture",
             "Renegate",
-            "Lens"
+            "Lens",
+            "InnerPitch"
         ];
 
         return TM_PALETTE_NAMES[palette];
@@ -3084,6 +3086,13 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
       0x425360ff, 0x543f62ff, 0x202437ff, 0x626262ff,
       0x333645ff, 0xfcddb5ff, 0xa8b8a8ff, 0xfcddb5ff,
       0x38638dff, 0x725a77ff, 0x394f62ff, 0xffffffff ],
+
+    // Inner-Pitch inspired palette
+    [ 0x23283f00, 0x9f2c55ff, 0x49665aff, 0x8e646fff,
+      0x5662a3ff, 0x814c78ff, 0x49665aff, 0xe2b7cbff,
+      0x323959ff, 0xea315cff, 0x83b795ff, 0xeba5b8ff,
+      0x7d8fdfff, 0xd27cc4ff, 0x83b795ff, 0xffe5f0ff ],
+
 ];
 
 alias TM_RangeFlags = int;
