@@ -222,13 +222,14 @@ enum : TM_Palette
     TM_paletteRenegate,     ///
     TM_paletteLens,         ///
     TM_paletteInnerPitch,   ///
+    TM_palettePanagement,   ///
 }
 
 /**
     Number of pre-defined palettes.
     Keep it sync with above.
 */
-enum TM_PALETTE_NUM = 14;
+enum TM_PALETTE_NUM = 15;
 
 /**
     Selected vintage font.
@@ -605,7 +606,8 @@ nothrow:
             "Couture",
             "Renegate",
             "Lens",
-            "InnerPitch"
+            "InnerPitch",
+            "Panagement"
         ];
 
         return TM_PALETTE_NAMES[palette];
@@ -3086,6 +3088,12 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
       0x5662a3ff, 0x814c78ff, 0x49665aff, 0xe2b7cbff,
       0x323959ff, 0xea315cff, 0x83b795ff, 0xeba5b8ff,
       0x7d8fdfff, 0xd27cc4ff, 0x83b795ff, 0xffe5f0ff ],
+
+    // Panagement inspired palette
+    [ 0x0e0c0a00, 0x4f2b26ff, 0x648258ff, 0xffc693ff,
+      0x4d4a6aff, 0x6c5e86ff, 0x7d9a9aff, 0x646058ff,
+      0x3c3d3dff, 0xffad82ff, 0x8fbb7eff, 0xffe6a7ff,
+      0xb7bbdeff, 0xa892d0ff, 0xcfffffff, 0xfff6e3ff ],
 
 ];
 
