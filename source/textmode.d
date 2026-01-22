@@ -2729,34 +2729,6 @@ YCbCrA_t RGBToBT601(rgba_t c)
     return r;
 }
 
-// TODO: move that to intel-intrinsics
-__m128i _mm_movelh_epi32 (__m128i a, __m128i b) pure @trusted
-{    
-    a.ptr[2] = b.array[0];
-    a.ptr[3] = b.array[1];
-    return a;
-}
-
-__m128i _mm_movehl_epi32 (__m128i a, __m128i b) pure @trusted
-{
-    a.ptr[0] = b.array[2];
-    a.ptr[1] = b.array[3];
-    return a;
-}
-
-void _MM_TRANSPOSE4_EPI32 (ref __m128i row0, ref __m128i row1, ref __m128i row2, ref __m128i row3) pure @safe
-{
-    __m128i tmp3, tmp2, tmp1, tmp0;
-    tmp0 = _mm_unpacklo_epi32(row0, row1);
-    tmp2 = _mm_unpacklo_epi32(row2, row3);
-    tmp1 = _mm_unpackhi_epi32(row0, row1);
-    tmp3 = _mm_unpackhi_epi32(row2, row3);
-    row0 = _mm_movelh_epi32(tmp0, tmp2);
-    row1 = _mm_movehl_epi32(tmp2, tmp0);
-    row2 = _mm_movelh_epi32(tmp1, tmp3);
-    row3 = _mm_movehl_epi32(tmp3, tmp1);
-}
-
 // FUTURE: could be more precise actually. See convertBT601ToRGBInPlace which used 19.13 fixed point
 void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
 {
@@ -2812,8 +2784,6 @@ void convertRGBA8ToBT601(YCbCrA_t* yuv, const(rgba_t)* rgba, int count) @system
     }
 }
 
-// FUTURE: interesting "broken" effect if you only convert 1 out of 4 pixels...
-//         try 1 out of 2 also!
 // in and out can be the same pointer
 void convertBT601ToRGBInPlace(YCbCrA_t* inBuf, rgba_t* outBuf, int N) @trusted
 {

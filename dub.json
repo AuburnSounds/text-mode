@@ -6,7 +6,7 @@
     "sourcePaths": ["source"],
     "dependencies":
     {
-        "intel-intrinsics": "~>1.0",
+        "intel-intrinsics": "~>1.14",
         "miniz": ">=0.0.0 <2.0.0"
     }
 }
