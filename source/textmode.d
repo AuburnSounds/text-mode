@@ -5210,7 +5210,7 @@ pure nothrow @nogc @safe:
         if ((byte1 & 0xE0) == 0xC0) 
         {
             byte2 = pop();
-            codepoint = ((byte1 & 0x1F) << 6) | byte2;
+            codepoint = ((byte1 & 0x1F) << 6) | (byte2 & 0x3F);
             if (codepoint >= 0x80)
                 return codepoint;
             else
@@ -5223,7 +5223,7 @@ pure nothrow @nogc @safe:
             byte2 = pop();
             if (eoi) goto invalid;
             byte3 = pop();
-            codepoint = ((byte1 & 0x0F) << 12) | (byte2 << 6) | byte3;
+            codepoint = ((byte1 & 0x0F) << 12) | ((byte2 & 0x3F) << 6) | (byte3 & 0x3F);
             if (codepoint >= 0x0800) 
             {
                 if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
@@ -5242,7 +5242,7 @@ pure nothrow @nogc @safe:
             byte3 = pop();
             if (eoi) goto invalid;
             byte4 = pop();
-            codepoint = ((byte1 & 0x07) << 0x12) | (byte2 << 0x0C) | (byte3 << 0x06) | byte4;
+            codepoint = ((byte1 & 0x07) << 0x12) | ((byte2 & 0x3F) << 0x0C) | ((byte3 & 0x3F) << 0x06) | (byte4 & 0x3F);
             if (codepoint >= 0x010000 && codepoint <= 0x10FFFF) {
                 return codepoint;
             } 
