@@ -223,13 +223,14 @@ enum : TM_Palette
     TM_paletteLens,         ///
     TM_paletteInnerPitch,   ///
     TM_palettePanagement,   ///
+    TM_palettePsypan,       ///
 }
 
 /**
     Number of pre-defined palettes.
     Keep it sync with above.
 */
-enum TM_PALETTE_NUM = 15;
+enum TM_PALETTE_NUM = 16;
 
 /**
     Selected vintage font.
@@ -607,7 +608,8 @@ nothrow:
             "Renegate",
             "Lens",
             "InnerPitch",
-            "Panagement"
+            "Panagement",
+            "Psypan"
         ];
 
         return TM_PALETTE_NAMES[palette];
@@ -3064,6 +3066,12 @@ static immutable uint[16][TM_PALETTE_NUM] PALETTE_DATA =
       0x4d4a6aff, 0x6c5e86ff, 0x7d9a9aff, 0x646058ff,
       0x3c3d3dff, 0xffad82ff, 0x8fbb7eff, 0xffe6a7ff,
       0xb7bbdeff, 0xa892d0ff, 0xcfffffff, 0xfff6e3ff ],
+
+    // Psypan inspired palette
+    [ 0x121a1300, 0x992614ff, 0x498066ff, 0x9d3c36ff,
+      0x263178ff, 0x263178ff, 0x498066ff, 0x716f74ff,
+      0x878e79ff, 0xdf6243ff, 0xaac472ff, 0xd06655ff,
+      0x6f91d8ff, 0x6f91d8ff, 0xd8dfe3ff, 0xffffffff ],
 
 ];
 
